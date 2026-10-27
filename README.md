@@ -49,7 +49,7 @@ npm run dev:mobile       # Expo dev server; open in Expo Go or an emulator
 npm test                 # shared logic tests
 ```
 
-Optional sync: set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` (web) and run each file in `supabase/migrations` in order in the Supabase SQL Editor. If you set up the database before `20261027130000_fix_invite_code.sql` existed, run that file too — it adds the table permissions newer Supabase projects need (without it, "Create" on the cloud-sync screen fails).
+Optional sync: the app ships with this family's Supabase project URL and publishable key as defaults (`apps/web/lib/store-context.tsx`); set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` (Vercel env vars or `apps/web/.env.local`) to use a different project, and run `supabase/migrations/20261027000000_init.sql` in the Supabase SQL Editor. If you set up the database before `20261027130000_fix_invite_code.sql` existed, run that file too — it adds the table permissions newer Supabase projects need (without it, "Create" on the cloud-sync screen fails).
 
 ## Use it on your phone (iPhone, iPhone Duo)
 

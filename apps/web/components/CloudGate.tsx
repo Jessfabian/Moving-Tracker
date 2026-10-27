@@ -151,7 +151,7 @@ function ConfigScreen() {
       <button className="btn-secondary w-full" onClick={() => updateSettings({ mode: "local" })}>
         Use on this device only
       </button>
-      <p className="muted text-xs">Tip: set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in apps/web/.env.local so everyone gets them automatically.</p>
+      <p className="muted text-xs">Tip: set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in Vercel (Settings → Environment Variables) so everyone gets them automatically.</p>
     </Centered>
   );
 }

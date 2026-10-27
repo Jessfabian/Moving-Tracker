@@ -26,12 +26,16 @@ export interface Settings {
 }
 
 const SETTINGS_KEY = "mt:settings";
+// The Supabase publishable (anon) key is meant to be public; Row Level Security protects the data.
+// Vercel/.env values win when set, so another family can point the app at their own project.
+const DEFAULT_SUPABASE_URL = "https://xvhgkawvhddubajwlqsg.supabase.co";
+const DEFAULT_SUPABASE_KEY = "sb_publishable_V5uuR5_dmCmZ-YY1DlgFTg_UyvLcX3l";
 const defaultSettings: Settings = {
   mode: "local",
   displayName: "",
   householdId: null,
-  supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
-  supabaseKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
+  supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL || DEFAULT_SUPABASE_URL,
+  supabaseKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_KEY,
 };
 
 function loadSettings(): Settings {
