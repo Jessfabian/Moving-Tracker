@@ -31,20 +31,21 @@ const SETTINGS_KEY = "mt:settings";
 const DEFAULT_SUPABASE_URL = "https://xvhgkawvhddubajwlqsg.supabase.co";
 const DEFAULT_SUPABASE_KEY = "sb_publishable_V5uuR5_dmCmZ-YY1DlgFTg_UyvLcX3l";
 const defaultSettings: Settings = {
-  mode: "local",
+  mode: "cloud",
   displayName: "",
   householdId: null,
   supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL || DEFAULT_SUPABASE_URL,
   supabaseKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_KEY,
 };
 
-function loadSettings(): Settings {
+function loadSettings(): Settings | null {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
-    const s = raw ? { ...defaultSettings, ...JSON.parse(raw) } : defaultSettings;
+    if (!raw) return null;
+    const s = { ...defaultSettings, ...JSON.parse(raw) };
     return { ...s, supabaseUrl: s.supabaseUrl || defaultSettings.supabaseUrl, supabaseKey: s.supabaseKey || defaultSettings.supabaseKey };
   } catch {
-    return defaultSettings;
+    return null;
   }
 }
 
@@ -55,6 +56,7 @@ interface Ctx {
   supabase: SupabaseClient | null;
   session: Session | null;
   households: Household[];
+  householdsLoaded: boolean;
   refreshHouseholds: () => Promise<void>;
   createHousehold: (name: string) => Promise<void>;
   joinHousehold: (code: string) => Promise<void>;
@@ -71,12 +73,27 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [households, setHouseholds] = useState<Household[]>([]);
+  const [householdsLoaded, setHouseholdsLoaded] = useState(false);
 
   useEffect(() => {
     // localStorage is only available after mount; reading it during render would break hydration.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setSettings(loadSettings());
-    setSettingsLoaded(true);
+    const saved = loadSettings();
+    if (saved) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSettings(saved);
+      setSettingsLoaded(true);
+      return;
+    }
+    // Never saved settings: new devices start on family sign-in, but a device that already has
+    // device-only data (from before cloud became the default) stays on it.
+    void idbKV
+      .getItem("mt:local:moves")
+      .catch(() => null)
+      .then((localMoves) => {
+        const hasLocal = !!localMoves && localMoves !== "[]";
+        setSettings({ ...defaultSettings, mode: hasLocal ? "local" : "cloud" });
+        setSettingsLoaded(true);
+      });
   }, []);
 
   const updateSettings = useCallback((patch: Partial<Settings>) => {
@@ -113,12 +130,32 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [supabase]);
 
   const refreshHouseholds = useCallback(async () => {
-    if (!supabase || !session) return setHouseholds([]);
-    setHouseholds(await listHouseholds(supabase));
-  }, [supabase, session]);
+    if (!supabase || !session) {
+      setHouseholds([]);
+      setHouseholdsLoaded(!supabase || authChecked);
+      return;
+    }
+    try {
+      const list = await listHouseholds(supabase);
+      setHouseholds(list);
+      // A fresh device (or the Home Screen app, which has its own storage) has no move picked yet:
+      // open the family's move automatically instead of asking again after every sign-in.
+      if (list.length === 1) {
+        setSettings((s) => {
+          if (s.householdId && list.some((h) => h.id === s.householdId)) return s;
+          const next = { ...s, householdId: list[0].id };
+          localStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
+          return next;
+        });
+      }
+    } finally {
+      setHouseholdsLoaded(true);
+    }
+  }, [supabase, session, authChecked]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
+    setHouseholdsLoaded(false);
     void refreshHouseholds().catch(() => setHouseholds([]));
   }, [refreshHouseholds]);
 
@@ -139,11 +176,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
     let cancelled = false;
     const inst = s;
-    void inst.load().then(() => {
+    void inst.load().then(async () => {
+      if (cancelled) return;
+      // First open on this device: download the shared move before showing pages, so the app
+      // doesn't think there's no move yet and send you to "create a new move".
+      if (inst.status.mode === "cloud" && !inst.status.lastSync) await inst.sync();
       if (cancelled) return;
       setStore(inst);
       if (inst.status.mode === "cloud") {
-        void inst.sync();
+        if (inst.status.lastSync) void inst.sync();
         inst.startRealtime();
       }
     });
@@ -167,6 +208,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     supabase,
     session,
     households,
+    householdsLoaded,
     refreshHouseholds,
     createHousehold: async (name) => {
       const id = await createHousehold(supabase!, name, actorName);

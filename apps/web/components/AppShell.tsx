@@ -117,7 +117,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [menu, setMenu] = useState(false);
 
-  const needsSetup = !!store && store.loaded && db.moves.length === 0 && path !== "/setup" && path !== "/settings";
+  const needsSetup = !!store && store.loaded && (store.status.mode === "local" || !!store.status.lastSync) && db.moves.length === 0 && path !== "/setup" && path !== "/settings";
   useEffect(() => {
     if (needsSetup) router.replace("/setup");
   }, [needsSetup, router]);

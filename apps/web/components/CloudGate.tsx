@@ -40,7 +40,7 @@ function AuthScreen() {
 
   return (
     <Centered>
-      <p className="muted text-center">Sign in so your whole family can share and edit the same move.</p>
+      <p className="muted text-center">Sign in once on this phone. You&apos;ll stay signed in and your family&apos;s move opens automatically.</p>
       <form
         className="space-y-3"
         onSubmit={(e) => {
@@ -50,11 +50,11 @@ function AuthScreen() {
       >
         <div>
           <label className="label">Email</label>
-          <input className="input" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+          <input className="input" type="email" name="username" autoComplete="username" autoCapitalize="none" required value={email} onChange={(e) => setEmail(e.target.value)} />
         </div>
         <div>
           <label className="label">Password</label>
-          <input className="input" type="password" autoComplete={mode === "in" ? "current-password" : "new-password"} required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} />
+          <input className="input" type="password" name="password" autoComplete={mode === "in" ? "current-password" : "new-password"} required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} />
         </div>
         {msg && <p className="rounded-lg bg-amber-50 p-2 text-sm text-amber-800">{msg}</p>}
         <button className="btn-primary w-full" disabled={busy}>
@@ -157,10 +157,13 @@ function ConfigScreen() {
 }
 
 export function CloudGate({ children }: { children: ReactNode }) {
-  const { settings, supabase, session } = useApp();
+  const { settings, supabase, session, households, householdsLoaded } = useApp();
   if (settings.mode !== "cloud") return <>{children}</>;
   if (!supabase) return <ConfigScreen />;
   if (!session) return <AuthScreen />;
-  if (!settings.householdId) return <HouseholdScreen />;
+  if (!settings.householdId) {
+    if (!householdsLoaded || households.length === 1) return <div className="flex min-h-screen items-center justify-center text-gray-500">Opening your move…</div>;
+    return <HouseholdScreen />;
+  }
   return <>{children}</>;
 }
