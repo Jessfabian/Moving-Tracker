@@ -1,0 +1,62 @@
+{
+  "expo": {
+    "name": "Moving Tracker",
+    "slug": "moving-tracker",
+    "scheme": "movingtracker",
+    "version": "1.0.0",
+    "orientation": "default",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#4f46e5"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.movingtracker.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Moving Tracker uses the camera to photograph belongings and scan book, product and box barcodes.",
+        "NSPhotoLibraryUsageDescription": "Moving Tracker lets you attach photos of belongings, receipts and documents."
+      }
+    },
+    "android": {
+      "package": "com.movingtracker.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "permissions": ["android.permission.CAMERA"],
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-sqlite",
+      "expo-sharing",
+      "@react-native-community/datetimepicker",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Moving Tracker uses the camera to scan book, product and box barcodes.",
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Moving Tracker lets you attach photos of belongings, receipts and documents.",
+          "cameraPermission": "Moving Tracker uses the camera to photograph belongings and documents."
+        }
+      ],
+      "expo-notifications"
+    ],
+    "experiments": {
+      "typedRoutes": false
+    }
+  }
+}

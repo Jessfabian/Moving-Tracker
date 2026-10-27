@@ -1,0 +1,18 @@
+{
+  "name": "moving-tracker",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev -w web",
+    "build:web": "npm run build -w web",
+    "dev:mobile": "npm run start -w mobile",
+    "test": "npm run test -w @moving/shared",
+    "typecheck": "npm run typecheck -w @moving/shared && npm run typecheck -w mobile"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.12"
+  }
+}

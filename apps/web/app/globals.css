@@ -1,0 +1,251 @@
+@import "tailwindcss";
+
+/*
+ * Design system — "Paper & Ink"
+ * Warm paper background, ink-black panels, one vivid tangerine accent,
+ * bold grotesque display type and modular bento cards.
+ * The indigo/violet/fuchsia and gray/slate scales are remapped so every page shares the palette.
+ */
+
+:root {
+  --paper: #f3f1ec;
+  --ink: #0d0d0f;
+  --accent: #ff5a1f;
+  --lime: #d7ff3e;
+}
+
+@theme {
+  --font-sans: var(--font-inter), "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: var(--font-display-face), "Bricolage Grotesque", var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  --color-paper: #f3f1ec;
+  --color-ink: #0d0d0f;
+  --color-accent: #ff5a1f;
+  --color-lime: #d7ff3e;
+  --color-sand: #efe6d6;
+  --color-sage: #dfe8d8;
+  --color-sky: #d9e6f2;
+  --color-lilac: #e6defa;
+  --color-blush: #f8ddd4;
+
+  /* Accent: tangerine */
+  --color-indigo-50: #fff4ed;
+  --color-indigo-100: #ffe6d5;
+  --color-indigo-200: #ffc9a8;
+  --color-indigo-300: #ffa470;
+  --color-indigo-400: #ff7a3d;
+  --color-indigo-500: #ff5a1f;
+  --color-indigo-600: #ec4510;
+  --color-indigo-700: #c2350c;
+  --color-indigo-800: #9a2c12;
+  --color-indigo-900: #7c2712;
+  --color-indigo-950: #431107;
+
+  --color-violet-50: #fff7ed;
+  --color-violet-100: #ffedd5;
+  --color-violet-200: #fed7aa;
+  --color-violet-300: #fdba74;
+  --color-violet-400: #fb923c;
+  --color-violet-500: #f97316;
+  --color-violet-600: #ea580c;
+  --color-violet-700: #c2410c;
+  --color-violet-800: #9a3412;
+  --color-violet-900: #7c2d12;
+
+  --color-fuchsia-400: #fbbf24;
+  --color-fuchsia-500: #f59e0b;
+  --color-fuchsia-600: #d97706;
+
+  /* Neutrals: warm stone */
+  --color-gray-50: #faf9f7;
+  --color-gray-100: #f2f0eb;
+  --color-gray-200: #e6e2da;
+  --color-gray-300: #d4cfc5;
+  --color-gray-400: #a29c91;
+  --color-gray-500: #77716a;
+  --color-gray-600: #57524c;
+  --color-gray-700: #3f3b36;
+  --color-gray-800: #27241f;
+  --color-gray-900: #171512;
+  --color-gray-950: #0d0d0f;
+  --color-slate-50: #faf9f7;
+  --color-slate-100: #f2f0eb;
+  --color-slate-200: #e6e2da;
+  --color-slate-300: #d4cfc5;
+  --color-slate-400: #a29c91;
+  --color-slate-500: #77716a;
+  --color-slate-600: #57524c;
+  --color-slate-700: #3f3b36;
+  --color-slate-800: #27241f;
+  --color-slate-900: #171512;
+  --color-slate-950: #0d0d0f;
+
+  --animate-rise: rise 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  color: var(--ink);
+  background: var(--paper);
+  font-family: var(--font-sans);
+  font-feature-settings: "cv11", "ss01", "ss03";
+  letter-spacing: -0.011em;
+}
+
+::selection {
+  background: var(--lime);
+  color: var(--ink);
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  letter-spacing: -0.03em;
+}
+
+/* Let grid columns shrink below their content so `truncate` works on narrow phones. */
+@layer base {
+  .grid > * {
+    min-width: 0;
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-[1.75rem] border border-gray-200/80 bg-white p-5 shadow-[0_1px_0_rgba(13,13,15,0.03),0_12px_32px_-18px_rgba(13,13,15,0.18)];
+  }
+  .card-ink {
+    @apply rounded-[1.75rem] bg-ink p-5 text-white;
+  }
+  .tile {
+    @apply rounded-[1.75rem] p-5 transition duration-200 hover:-translate-y-0.5;
+  }
+  .btn {
+    @apply inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-sm font-semibold transition-all duration-150 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40;
+  }
+  .btn-primary {
+    @apply inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-sm font-semibold transition-all duration-150 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40 bg-ink text-white shadow-[0_8px_20px_-10px_rgba(13,13,15,0.6)] hover:bg-accent;
+  }
+  .btn-accent {
+    @apply inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-sm font-semibold transition-all duration-150 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40 bg-accent text-white shadow-[0_10px_24px_-12px_rgba(255,90,31,0.9)] hover:brightness-110;
+  }
+  .btn-secondary {
+    @apply inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-sm font-semibold transition-all duration-150 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40 border border-gray-300 bg-white text-ink hover:border-ink;
+  }
+  .btn-ghost {
+    @apply inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-sm font-semibold transition-all duration-150 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40 px-3.5 text-gray-600 hover:bg-ink/5 hover:text-ink;
+  }
+  .btn-danger {
+    @apply inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-sm font-semibold transition-all duration-150 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40 bg-red-50 text-red-600 hover:bg-red-100;
+  }
+  .input {
+    @apply w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-ink transition outline-none placeholder:text-gray-400 hover:border-gray-300 focus:border-ink focus:bg-white focus:ring-4 focus:ring-ink/5;
+  }
+  .label {
+    @apply mb-1.5 block text-[11px] font-semibold tracking-[0.08em] text-gray-500 uppercase;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold;
+  }
+  .eyebrow {
+    @apply text-[11px] font-semibold tracking-[0.14em] text-gray-500 uppercase;
+  }
+  .h1 {
+    @apply font-display text-[2.1rem] leading-[1.02] font-extrabold tracking-[-0.04em] text-ink sm:text-5xl;
+  }
+  .display {
+    @apply font-display font-extrabold tracking-[-0.045em];
+  }
+  .muted {
+    @apply text-sm text-gray-500;
+  }
+  .gradient-text {
+    @apply text-accent;
+  }
+  .highlight {
+    background: linear-gradient(transparent 58%, var(--lime) 58%, var(--lime) 92%, transparent 92%);
+    @apply px-0.5;
+  }
+  .dot-grid {
+    background-image: radial-gradient(rgba(255, 255, 255, 0.09) 1px, transparent 1px);
+    background-size: 18px 18px;
+  }
+}
+
+input[type="checkbox"] {
+  accent-color: var(--ink);
+}
+
+main > * {
+  animation: var(--animate-rise);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  main > * {
+    animation: none;
+  }
+}
+
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+/* ---------- Map pins (Leaflet divIcon) ---------- */
+.mt-pin-wrap { background: none; border: 0; }
+.mt-pin {
+  position: absolute;
+  transform: translate(-50%, calc(-100% - 8px));
+  white-space: nowrap;
+  background: var(--pc, #0d0d0f);
+  color: #fff;
+  font: 700 12px/1 var(--font-inter), system-ui, sans-serif;
+  padding: 7px 10px;
+  border-radius: 999px;
+  box-shadow: 0 8px 20px -8px rgba(13, 13, 15, 0.55);
+  border: 2px solid #fff;
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+.mt-pin::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -7px;
+  width: 10px;
+  height: 10px;
+  background: inherit;
+  border-right: 2px solid #fff;
+  border-bottom: 2px solid #fff;
+  transform: translateX(-50%) rotate(45deg);
+}
+.mt-pin:hover, .mt-pin.mt-active { transform: translate(-50%, calc(-100% - 8px)) scale(1.12); z-index: 10; }
+.mt-pin.mt-active { background: #ff5a1f; }
+.mt-place { background: #d7ff3e; color: #0d0d0f; border-color: #0d0d0f; display: flex; gap: 5px; align-items: center; }
+.mt-place::after { border-color: #0d0d0f; }
+.mt-school {
+  position: absolute; transform: translate(-50%, -50%);
+  min-width: 22px; height: 22px; padding: 0 5px; border-radius: 999px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--pc); color: #fff; font: 800 11px/1 var(--font-sans, system-ui);
+  border: 2px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,.35); white-space: nowrap; cursor: pointer;
+  transition: transform .15s;
+}
+.mt-school:hover, .mt-school.mt-active { transform: translate(-50%, -50%) scale(1.35); outline: 2px solid #0d0d0f; z-index: 10; }
+.mt-plane { position: absolute; font-size: 26px; color: #0d0d0f; text-shadow: 0 0 3px #fff, 0 0 6px #fff; }
+.leaflet-container { font-family: var(--font-inter), system-ui, sans-serif; }
+.leaflet-control-zoom a { border-radius: 12px !important; }
+.mt-tiles { filter: grayscale(0.55) sepia(0.12) contrast(0.95) brightness(1.03); }
