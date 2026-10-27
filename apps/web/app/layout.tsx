@@ -18,6 +18,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  // Stops iOS auto-zooming into focused fields; pinch-zoom still works in iOS Safari.
+  maximumScale: 1,
   viewportFit: "cover",
   themeColor: "#f3f1ec",
 };

@@ -141,14 +141,14 @@ export function AppShell({ children }: { children: ReactNode }) {
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-30 flex items-center justify-between bg-paper/80 px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur-xl lg:hidden short:hidden">
+          <header className="sticky top-0 z-30 flex items-center justify-between bg-paper/80 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] py-3 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur-xl lg:hidden short:hidden">
             <Logo />
             <SyncBadge />
           </header>
-          <main className="mx-auto w-full max-w-[1180px] flex-1 px-4 pt-3 pb-32 sm:px-6 lg:px-10 lg:pt-10 lg:pb-14 short:pt-[max(0.75rem,env(safe-area-inset-top))] short:pb-6 short:pr-[calc(4.5rem+env(safe-area-inset-right))] short:pl-[max(1.5rem,env(safe-area-inset-left))]">{store ? children : <div className="text-gray-500">Loading your move…</div>}</main>
+          <main className="mx-auto w-full max-w-[1180px] flex-1 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pt-3 pb-32 sm:pl-[max(1.5rem,env(safe-area-inset-left))] sm:pr-[max(1.5rem,env(safe-area-inset-right))] lg:px-10 lg:pt-10 lg:pb-14 short:pt-[max(0.75rem,env(safe-area-inset-top))] short:pb-6 short:pr-[calc(4.5rem+env(safe-area-inset-right))] short:pl-[max(1.5rem,env(safe-area-inset-left))]">{store ? children : <div className="text-gray-500">Loading your move…</div>}</main>
         </div>
 
-        <nav aria-label="Main" className="duo-tabbar fixed inset-x-3 bottom-3 z-40 mb-[env(safe-area-inset-bottom)] grid grid-cols-5 gap-1 rounded-full bg-ink p-1.5 shadow-[0_18px_40px_-14px_rgba(13,13,15,0.6)] lg:hidden short:hidden">
+        <nav aria-label="Main" className="duo-tabbar fixed left-[max(0.75rem,env(safe-area-inset-left))] right-[max(0.75rem,env(safe-area-inset-right))] bottom-3 z-40 mb-[env(safe-area-inset-bottom)] grid grid-cols-5 gap-1 rounded-full bg-ink p-1.5 shadow-[0_18px_40px_-14px_rgba(13,13,15,0.6)] lg:hidden short:hidden">
           {MOBILE_TABS.map((t) => {
             const active = t.href === "/" ? path === "/" : path.startsWith(t.href);
             return (
