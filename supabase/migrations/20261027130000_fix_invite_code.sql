@@ -1,5 +1,12 @@
--- Fixes for databases set up with the first version of 20261027000000_init.sql. Safe to run more than once.
---
+-- ONLY for databases already set up with an older 20261027000000_init.sql. Safe to run more than once.
+-- New project? Run 20261027000000_init.sql instead - it already includes everything below.
+do $$
+begin
+  if to_regclass('public.households') is null then
+    raise exception 'Moving Tracker tables are not set up yet. Run supabase/migrations/20261027000000_init.sql (the full setup script) instead of this file.';
+  end if;
+end $$;
+
 -- 1) "function gen_random_bytes(integer) does not exist" when creating a move on Supabase.
 -- Supabase installs pgcrypto in the "extensions" schema, which create_household() (search_path = public)
 -- can't see. gen_random_uuid() is built into Postgres, so the invite code no longer needs pgcrypto.
