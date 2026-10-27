@@ -166,7 +166,8 @@ export function RoomScan({ open, onClose, initialRoomId, onSaved }: { open: bool
     let rid = roomId;
     if (rid === "__new" || !rid) {
       const name = roomId === "__new" && newRoom.trim() ? newRoom.trim() : ROOM_TYPE_LABELS[roomType];
-      rid = store.insert("rooms", { name, sort: rooms.length }).id;
+      const same = rooms.find((r) => r.name.trim().toLowerCase() === name.toLowerCase());
+      rid = same ? same.id : store.insert("rooms", { name, sort: rooms.length }).id;
     }
     const rowsOut = await Promise.all(
       chosen.map(async (r) => {

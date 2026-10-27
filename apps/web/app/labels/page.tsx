@@ -53,7 +53,8 @@ function QuickCreate({ onCreated }: { onCreated: (ids: string[]) => void }) {
     let rid = roomId;
     let target = room;
     if (roomId === NEW) {
-      target = store.insert("rooms", { name: newName.trim(), destination_room: newDest.trim() || newName.trim(), color: newColor, sort: db.rooms.length });
+      const same = db.rooms.find((r) => r.name.trim().toLowerCase() === newName.trim().toLowerCase());
+      target = same ?? store.insert("rooms", { name: newName.trim(), destination_room: newDest.trim() || newName.trim(), color: newColor, sort: db.rooms.length });
       rid = target.id;
       setRoomId(rid);
       setNewName("");
@@ -203,7 +204,7 @@ export default function LabelsPage() {
         subtitle="Color-coded labels for every box, generated from its room. Scan the QR with the app to see exactly what's inside."
         actions={
           <button className="btn-primary" disabled={!ids.length} onClick={() => printHtml(html)}>
-            🖨️ Print {labelCount || ""} label{labelCount === 1 ? "" : "s"}
+            🖨️ {labelCount ? `Print ${labelCount} label${labelCount === 1 ? "" : "s"}` : "Print labels"}
           </button>
         }
       />
@@ -338,7 +339,7 @@ export default function LabelsPage() {
           ) : (
             <div className="flex flex-1 flex-col items-center justify-center gap-2 p-10 text-center text-slate-400">
               <div className="text-5xl">🏷️</div>
-              <div>Select boxes on the left to preview their labels.</div>
+              <div>Pick boxes in step 1 to preview their labels.</div>
               <div className="text-xs">Tip: print 2 copies per box, one for the top and one for the side.</div>
             </div>
           )}
