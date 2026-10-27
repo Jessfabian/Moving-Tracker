@@ -53,7 +53,7 @@ Optional sync: set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY
 
 ## Use it on your phone (iPhone, iPhone Duo)
 
-1. **Deploy (free):** sign in at [vercel.com](https://vercel.com) with GitHub → *Add New → Project* → import this repo → set **Root Directory** to `apps/web` → *Deploy*. You get an `https://…vercel.app` URL. HTTPS is required for the live barcode camera.
+1. **Deploy (free):** sign in at [vercel.com](https://vercel.com) with GitHub → *Add New → Project* → import this repo → set **Root Directory** to `apps/web` → *Deploy* (`apps/web/vercel.json` makes Vercel install from the repo root so the shared package is linked). You get an `https://…vercel.app` URL. HTTPS is required for the live barcode camera.
 2. **Install:** open that URL in Safari on the phone → *Share* → **Add to Home Screen**. It opens full-screen with its own icon, like an app.
 3. **Share data (optional):** data lives on each device. To see the same move on the laptop, your phone and your partner's phone, add the Supabase variables above in Vercel → *Settings → Environment Variables* and redeploy.
 4. **Optional keys:** `OPENAI_API_KEY` (smarter room-photo recognition). Room scan otherwise runs on the phone and downloads its model (~16 MB) on first use.
