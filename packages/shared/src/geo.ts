@@ -650,6 +650,13 @@ export function parseListingText(text: string): ListingInfo {
   if (sqft) info.sqft = num(sqft);
   const phone = /\(?\b\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}\b/.exec(t)?.[0];
   if (phone) info.phone = phone;
-  if (info.address) info.title = [info.address, info.city].filter(Boolean).join(', ');
+  if (info.address) {
+    // Listing sites put the property name on the line just above the street address.
+    const lines = t.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const at = lines.findIndex((l) => l.startsWith(info.address!));
+    const prev = at > 0 ? lines[at - 1] : undefined;
+    const looksLikeName = prev && prev.length <= 80 && /[a-z]/i.test(prev) && !/[$|]|\d{5}|photos?|tours?|videos?|›|>|sign in|menu/i.test(prev) && !/^(tennessee|texas|[A-Z][a-z]+)\s{2,}/.test(prev);
+    info.title = looksLikeName ? prev : [info.address, info.city].filter(Boolean).join(', ');
+  }
   return info;
 }

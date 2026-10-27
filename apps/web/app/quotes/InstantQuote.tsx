@@ -71,27 +71,30 @@ export function InstantQuoteCard({ size, estimates }: { size: MoveSize; estimate
         <p className="mt-2 rounded-xl bg-sand p-2.5 text-xs text-gray-700">
           🔒 Only your ZIP codes, move date and size are sent — no names, phone numbers or e-mails, so it won&apos;t trigger sales calls.
         </p>
-        <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-          <label className="col-span-2 flex items-center gap-2">
-            <input type="checkbox" checked={opts.useOurSize !== false} onChange={(e) => set({ useOurSize: e.target.checked })} />
-            Use our size ({size.cubicFeet.toLocaleString()} cu ft) — off = their typical {size.homeLabel.toLowerCase()}
+        <div className="ios-list mt-3 bg-gray-50 text-[15px]">
+          {(
+            [
+              ["useOurSize", `Use our size (${size.cubicFeet.toLocaleString()} cu ft)`, opts.useOurSize !== false, `Off = their typical ${size.homeLabel.toLowerCase()}`],
+              ["packing", "They pack", !!opts.packing],
+              ["unpacking", "They unpack", !!opts.unpacking],
+              ["guaranteedDelivery", "Guaranteed delivery date", !!opts.guaranteedDelivery],
+            ] as const
+          ).map(([key, label, checked, hint]) => (
+            <label key={key} className="flex min-h-11 items-center gap-3 px-3.5 py-2">
+              <span className="min-w-0 flex-1">
+                {label}
+                {hint && <span className="block text-[13px] text-gray-500">{hint}</span>}
+              </span>
+              <input type="checkbox" checked={checked} onChange={(e) => set({ [key]: e.target.checked })} />
+            </label>
+          ))}
+          <label className="flex min-h-11 items-center gap-3 px-3.5 py-1.5">
+            <span className="flex-1">Flights of stairs</span>
+            <input className="input w-20 py-1 text-right" type="number" inputMode="numeric" min={0} max={10} value={opts.stairsFlights ?? 0} onChange={(e) => set({ stairsFlights: Number(e.target.value) || 0 })} />
           </label>
-          <label className="flex items-center gap-2">
-            <input type="checkbox" checked={!!opts.packing} onChange={(e) => set({ packing: e.target.checked })} /> They pack
-          </label>
-          <label className="flex items-center gap-2">
-            <input type="checkbox" checked={!!opts.unpacking} onChange={(e) => set({ unpacking: e.target.checked })} /> They unpack
-          </label>
-          <label className="flex items-center gap-2">
-            <input type="checkbox" checked={!!opts.guaranteedDelivery} onChange={(e) => set({ guaranteedDelivery: e.target.checked })} /> Guaranteed delivery date
-          </label>
-          <label className="flex items-center gap-2">
-            Stairs
-            <input className="input w-16 py-1" type="number" min={0} max={10} value={opts.stairsFlights ?? 0} onChange={(e) => set({ stairsFlights: Number(e.target.value) || 0 })} />
-          </label>
-          <label className="flex items-center gap-2">
-            Storage (months)
-            <input className="input w-16 py-1" type="number" min={0} max={24} value={opts.storageMonths ?? 0} onChange={(e) => set({ storageMonths: Number(e.target.value) || 0 })} />
+          <label className="flex min-h-11 items-center gap-3 px-3.5 py-1.5">
+            <span className="flex-1">Storage (months)</span>
+            <input className="input w-20 py-1 text-right" type="number" inputMode="numeric" min={0} max={24} value={opts.storageMonths ?? 0} onChange={(e) => set({ storageMonths: Number(e.target.value) || 0 })} />
           </label>
         </div>
         <button className="btn-primary mt-4" onClick={() => void run()} disabled={busy}>

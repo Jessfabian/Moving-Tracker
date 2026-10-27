@@ -160,7 +160,7 @@ export function SellDrawer({ books, open, onClose, onSold }: { books: Book[]; op
             ))}
           </div>
 
-          <section className="grid gap-3 sm:grid-cols-2">
+          <section className="grid gap-3 @md:grid-cols-2">
             <div className="tile bg-sand">
               <div className="eyebrow">📦 Pack it in</div>
               <div className="mt-1 font-bold leading-tight">{advice.package?.name ?? "Split into several boxes"}</div>
@@ -197,7 +197,7 @@ export function SellDrawer({ books, open, onClose, onSold }: { books: Book[]; op
 
           <section>
             <h3 className="mb-2 font-bold">Where to sell — what you&apos;d take home</h3>
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className="grid gap-2 @md:grid-cols-2">
               {quotes.map(({ ch, q }) => (
                 <button
                   key={ch.id}

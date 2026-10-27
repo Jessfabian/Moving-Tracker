@@ -203,8 +203,8 @@ export function CrudPage<T extends TableName>(props: CrudPageProps<T>) {
                 ? db.rooms.map((m) => ({ value: m.id, label: m.name }))
                 : []);
           return (
-            <select key={k} className="input w-auto" value={filter[k] ?? ""} onChange={(e) => setFilter({ ...filter, [k]: e.target.value })}>
-              <option value="">All {f.label.toLowerCase()}</option>
+            <select key={k} aria-label={`Filter by ${f.label.toLowerCase()}`} className="input w-auto" value={filter[k] ?? ""} onChange={(e) => setFilter({ ...filter, [k]: e.target.value })}>
+              <option value="">Any {f.label.toLowerCase()}</option>
               {opts.map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}

@@ -28,10 +28,10 @@ function Portal({ children }: { children: ReactNode }) {
 function CloseButton({ onClose }: { onClose: () => void }) {
   return (
     <>
-      <button className="hidden h-9 w-9 shrink-0 place-items-center rounded-full bg-ink/5 text-sm transition hover:bg-ink hover:text-white lg:grid" onClick={onClose} aria-label="Close">
+      <button type="button" className="hidden h-9 w-9 shrink-0 place-items-center rounded-full bg-ink/5 text-sm transition hover:bg-ink hover:text-white lg:grid" onClick={onClose} aria-label="Close">
         ✕
       </button>
-      <button className="-mr-2 h-11 shrink-0 rounded-full px-3 text-[17px] font-semibold text-accent active:opacity-60 lg:hidden" onClick={onClose}>
+      <button type="button" className="-mr-2 h-11 shrink-0 rounded-full px-3 text-[17px] font-semibold text-accent active:opacity-60 lg:hidden" onClick={onClose}>
         Close
       </button>
     </>
@@ -59,7 +59,7 @@ export function Drawer({ open, onClose, title, children, wide }: { open: boolean
           <h2 className="min-w-0 truncate font-display text-[22px] font-bold tracking-tight sm:text-2xl">{title}</h2>
           <CloseButton onClose={onClose} />
         </div>
-        <div className="min-h-0 flex-1 overscroll-contain overflow-y-auto px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:px-6">{children}</div>
+        <div className="@container min-h-0 flex-1 overscroll-contain overflow-y-auto px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:px-6">{children}</div>
       </div>
     </div>
     </Portal>
@@ -73,7 +73,7 @@ export function Modal({ open, onClose, title, children }: { open: boolean; onClo
     <Portal>
     <div className="duo-modal fixed inset-0 z-50 flex items-end justify-center sm:items-center" role="dialog" aria-modal="true">
       <div className="animate-fade absolute inset-0 bg-ink/50 backdrop-blur-[2px]" onClick={onClose} />
-      <div className="animate-sheet relative max-h-[92dvh] w-full max-w-lg short:max-h-[96dvh] overscroll-contain overflow-y-auto rounded-t-[1.75rem] bg-paper px-5 pt-0 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-2xl sm:rounded-[1.75rem] sm:p-6 sm:animate-none">
+      <div className="@container animate-sheet relative max-h-[92dvh] w-full max-w-lg short:max-h-[96dvh] overscroll-contain overflow-y-auto rounded-t-[1.75rem] bg-paper px-5 pt-0 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-2xl sm:rounded-[1.75rem] sm:p-6 sm:animate-none">
         <Grabber />
         <div className="mb-4 flex items-center justify-between gap-3 pt-3 sm:pt-0">
           <h2 className="min-w-0 truncate font-display text-[22px] font-bold tracking-tight sm:text-2xl">{title}</h2>
@@ -172,7 +172,7 @@ function HeaderActions({ actions }: { actions: ReactNode }) {
         <div className="relative flex w-full items-center gap-2 lg:hidden">
           {others}
           <div className="flex-1 [&>*]:w-full">{primary}</div>
-          <button className="btn-secondary h-11 w-11 shrink-0 px-0! text-xl leading-none" aria-label="More actions" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+          <button type="button" className="btn-secondary h-11 w-11 shrink-0 px-0! text-xl leading-none" aria-label="More actions" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
             •••
           </button>
           {open && (
@@ -217,6 +217,7 @@ export function Segmented<T extends string>({ value, options, onChange }: { valu
     <div className="no-scrollbar inline-flex max-w-full gap-0.5 overflow-x-auto rounded-full bg-ink/[0.06] p-1">
       {options.map((o) => (
         <button
+          type="button"
           key={o.value}
           onClick={() => onChange(o.value)}
           className={`min-h-9 shrink-0 rounded-full px-3.5 py-1.5 text-sm font-semibold whitespace-nowrap transition ${value === o.value ? "bg-ink text-white shadow-sm" : "text-gray-600 hover:text-ink"}`}

@@ -201,7 +201,7 @@ export function RoomScan({ open, onClose, initialRoomId, onSaved }: { open: bool
         {phase !== "review" && (
           <>
             <p className="text-sm text-gray-600">Take 1–8 photos of the room from different corners. The AI picks out the furniture and things in them, then you fix the list before anything is saved. Photos are analysed on this device.</p>
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3 @md:grid-cols-2">
               <label className="block">
                 <span className="label">Room</span>
                 <select className="input" value={roomId} onChange={(e) => setRoomId(e.target.value)}>

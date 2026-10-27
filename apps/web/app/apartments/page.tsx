@@ -167,46 +167,61 @@ function SchoolControls({ on, setOn, level, setLevel, municipalOnly, setMunicipa
   setMinGrade: (g: string) => void;
   count: number;
 }) {
+  const [panel, setPanel] = useState(false);
+  const filtered = municipalOnly || !!minGrade;
+  const chip = "min-h-9 rounded-full px-3.5 text-[13px] font-semibold shadow-md backdrop-blur";
   return (
-    <div className="absolute top-4 right-4 z-[400] flex max-w-[calc(100%-2rem)] flex-col items-end gap-2">
-      <button onClick={() => setOn(!on)} className={`rounded-full px-3 py-1.5 text-xs font-semibold shadow ${on ? "bg-ink text-white" : "bg-white/95 text-ink"}`}>
-        🏫 Schools {on ? `· ${count}` : "off"}
-      </button>
-      {on && (
-        <div className="flex flex-col gap-2 rounded-2xl bg-white/95 p-2 text-xs shadow-lg">
+    <div className="absolute top-3 right-3 z-[400] flex max-w-[calc(100%-1.5rem)] flex-col items-end gap-2">
+      <div className="flex gap-1.5">
+        <button type="button" onClick={() => setOn(!on)} aria-pressed={on} className={`${chip} ${on ? "bg-ink text-white" : "bg-white/90 text-ink"}`}>
+          🏫 Schools{on ? ` · ${count}` : ""}
+        </button>
+        {on && (
+          <button type="button" onClick={() => setPanel(!panel)} aria-expanded={panel} className={`${chip} ${panel || filtered ? "bg-lime text-ink" : "bg-white/90 text-ink"}`}>
+            Filter{filtered && !panel ? " •" : ""}
+          </button>
+        )}
+      </div>
+      {on && panel && (
+        <div className="animate-pop w-64 max-w-full space-y-3 rounded-2xl bg-white/95 p-3 text-[13px] shadow-xl backdrop-blur">
           <div className="flex gap-1">
             {SCHOOL_LEVELS.map((l) => (
-              <button key={l.key} onClick={() => setLevel(l.key)} className={`rounded-full px-2.5 py-1 font-semibold ${level === l.key ? "bg-ink text-white" : "bg-gray-100 hover:bg-gray-200"}`}>
+              <button type="button" key={l.key} onClick={() => setLevel(l.key)} className={`min-h-8 flex-1 rounded-full px-2 font-semibold ${level === l.key ? "bg-ink text-white" : "bg-gray-100"}`}>
                 {l.label}
               </button>
             ))}
           </div>
-          <label className="flex items-center gap-2 px-1">
-            <input type="checkbox" checked={municipalOnly} onChange={(e) => setMunicipalOnly(e.target.checked)} /> Municipal districts only
+          <label className="flex items-center justify-between gap-2">
+            Municipal districts only
+            <input type="checkbox" checked={municipalOnly} onChange={(e) => setMunicipalOnly(e.target.checked)} />
           </label>
-          <label className="flex items-center gap-2 px-1">
+          <label className="flex items-center justify-between gap-2">
             Grade
-            <select className="rounded-lg border border-gray-200 px-1 py-0.5" value={minGrade} onChange={(e) => setMinGrade(e.target.value)}>
+            <select className="ios-popup" value={minGrade} onChange={(e) => setMinGrade(e.target.value)}>
               <option value="">Any</option>
               <option value="A">A only</option>
               <option value="B">B or better</option>
               <option value="C">C or better</option>
             </select>
           </label>
-          <div className="flex items-center gap-1 px-1 text-[10px] text-gray-500">
-            {["A", "B", "C", "D", "F"].map((g) => (
-              <span key={g} className="grid h-4 w-4 place-items-center rounded-full font-bold text-white" style={{ background: gradeColor(g) }}>
-                {g}
-              </span>
-            ))}
-            <span>TN {SCHOOLS_DATA_YEAR}</span>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1 text-[11px] text-gray-500">
+              {["A", "B", "C", "D", "F"].map((g) => (
+                <span key={g} className="grid h-4 w-4 place-items-center rounded-full font-bold text-white" style={{ background: gradeColor(g) }}>
+                  {g}
+                </span>
+              ))}
+              <span className="ml-1">TN {SCHOOLS_DATA_YEAR}</span>
+            </div>
+            <button type="button" className="min-h-8 px-1 font-semibold text-accent" onClick={() => setPanel(false)}>
+              Done
+            </button>
           </div>
         </div>
       )}
     </div>
   );
 }
-
 function MapSection({ api }: { api: CrudApi<"apartments"> }) {
   const db = useDb();
   const place = primaryPlace(db.moves[0]?.places);
@@ -278,19 +293,14 @@ function MapSection({ api }: { api: CrudApi<"apartments"> }) {
   return (
     <>
     <section className="mb-6 grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
-      <div className="relative">
+      <div className="relative isolate">
         <MapView pins={pins} lines={lines} fitTo={fitTo} className="h-[440px] lg:h-[560px]" onPinClick={onPin} />
         <SchoolControls on={showSchools} setOn={setShowSchools} level={level} setLevel={setLevel} municipalOnly={municipalOnly} setMunicipalOnly={setMunicipalOnly} minGrade={minGrade} setMinGrade={setMinGrade} count={schoolList.length} />
-        <div className="pointer-events-none absolute top-4 left-4 z-[400] flex flex-wrap gap-2">
+        <div className="pointer-events-none absolute bottom-3 left-3 z-[400] flex max-w-[calc(100%-4.5rem)] flex-wrap gap-1.5">
           <span className="rounded-full bg-white/95 px-3 py-1.5 text-xs font-semibold shadow">
             {located.length} rental{located.length === 1 ? "" : "s"} on map
+            {missing.length > 0 && <span className="font-normal text-gray-500"> · {missing.length} need an address</span>}
           </span>
-          {place && (
-            <span className="rounded-full bg-lime px-3 py-1.5 text-xs font-semibold text-ink shadow">
-              ★ {place.label}
-            </span>
-          )}
-          {missing.length > 0 && <span className="rounded-full bg-white/95 px-3 py-1.5 text-xs text-gray-500 shadow">{missing.length} need an address</span>}
         </div>
         {!located.length && !showSchools && (
           <div className="absolute inset-0 z-[400] flex items-center justify-center p-6">
@@ -339,6 +349,24 @@ function MapSection({ api }: { api: CrudApi<"apartments"> }) {
   );
 }
 
+function SummaryTile({ className, label, value, unit, caption, badge }: { className: string; label: string; value: string; unit?: string; caption: ReactNode; badge?: { ok: boolean; text: string } }) {
+  return (
+    <div className={`tile grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 sm:flex sm:flex-col sm:items-stretch ${className}`}>
+      <div className="eyebrow col-start-1 row-start-1 sm:truncate">{label}</div>
+      <div className="col-start-2 row-span-3 row-start-1 flex min-w-0 items-baseline justify-end gap-0.5 sm:mt-1.5 sm:justify-start">
+        <span className="truncate font-display text-[24px] leading-tight font-bold tabular-nums sm:text-4xl">{value}</span>
+        {unit && <span className="flex-none text-[13px] font-semibold text-gray-500">{unit}</span>}
+      </div>
+      <div className="col-start-1 mt-0.5 line-clamp-2 text-[13px] text-gray-600">{caption}</div>
+      {badge && (
+        <span className={`col-start-1 mt-2 self-start justify-self-start truncate rounded-full bg-white/70 px-2.5 py-1 text-[12px] font-semibold ${badge.ok ? "text-emerald-700" : "text-amber-700"}`}>
+          {badge.text}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function Overview({ api }: { api: CrudApi<"apartments"> }) {
   const db = useDb();
   const apts = db.apartments;
@@ -347,6 +375,8 @@ function Overview({ api }: { api: CrudApi<"apartments"> }) {
   const signed = apts.find((a) => a.status === "signed");
   const maxRent = maxAffordableRent(db);
   const annualIncome = Math.round(cashflow({ incomes: db.incomes }, "after").incomeGross * 12);
+  const cheapest = rents.length ? Math.min(...rents) : 0;
+  const needed = cheapest ? incomeNeeded(cheapest) : 0;
   const upcoming = live
     .flatMap((a) => [a.tour_date ? { a, what: "Tour", date: a.tour_date } : null, a.application_deadline ? { a, what: "Apply by", date: a.application_deadline } : null])
     .filter((x): x is { a: Apartment; what: string; date: string } => !!x)
@@ -368,39 +398,34 @@ function Overview({ api }: { api: CrudApi<"apartments"> }) {
           </div>
         </button>
       )}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <div className="tile bg-sand">
-          <div className="eyebrow">Options</div>
-          <div className="mt-2 font-display text-4xl font-bold">{live.length}</div>
-          <div className="text-xs text-gray-600">{apts.length - live.length} ruled out</div>
-        </div>
-        <div className="tile bg-sage">
-          <div className="eyebrow">Cheapest monthly</div>
-          <div className="mt-2 font-display text-4xl font-bold">{rents.length ? formatMoney(Math.min(...rents)) : "—"}</div>
-          <div className="text-xs text-gray-600">rent + fees + utilities</div>
-        </div>
-        <div className="tile bg-sky">
-          <div className="eyebrow">Your max rent</div>
-          <div className="mt-2 font-display text-4xl font-bold">{maxRent ? formatMoney(maxRent) : "—"}</div>
-          <div className="text-xs text-gray-600">{maxRent ? "30% of after-move gross income" : <a href="/bills" className="underline">Add income to see this</a>}</div>
-        </div>
-        <div className="tile bg-lilac">
-          <div className="eyebrow">{rents.length ? "Income needed" : "Your income"}</div>
-          {rents.length ? (
-            <>
-              <div className="mt-2 font-display text-4xl font-bold">{formatMoney(incomeNeeded(Math.min(...rents)))}</div>
-              <div className="text-xs text-gray-600">
-                /yr for the cheapest (30% rule)
-                {annualIncome > 0 && (annualIncome >= incomeNeeded(Math.min(...rents)) ? ` · you make ${formatMoney(annualIncome)} ✓` : ` · you make ${formatMoney(annualIncome)}`)}
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="mt-2 font-display text-4xl font-bold">{annualIncome ? formatMoney(annualIncome) : "—"}</div>
-              <div className="text-xs text-gray-600">{annualIncome ? "/yr gross after the move · add a rent to a rental to compare" : <a href="/bills" className="underline">Add income to see this</a>}</div>
-            </>
-          )}
-        </div>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3 lg:grid-cols-4">
+        <SummaryTile className="bg-sand" label="Options" value={String(live.length)} caption={`${apts.length - live.length} ruled out`} />
+        <SummaryTile className="bg-sage" label="Cheapest" value={cheapest ? formatMoney(cheapest) : "—"} unit={cheapest ? "/mo" : undefined} caption="Rent + fees + utilities" />
+        <SummaryTile
+          className="bg-sky"
+          label="Max rent"
+          value={maxRent ? formatMoney(maxRent) : "—"}
+          unit={maxRent ? "/mo" : undefined}
+          caption={maxRent ? "30% of gross income" : <a href="/bills" className="underline">Add income</a>}
+        />
+        {cheapest ? (
+          <SummaryTile
+            className="bg-lilac"
+            label="Income needed"
+            value={formatMoney(needed)}
+            unit="/yr"
+            caption="For the cheapest"
+            badge={annualIncome > 0 ? (annualIncome >= needed ? { ok: true, text: `✓ You make ${formatMoney(annualIncome)}` } : { ok: false, text: `${formatMoney(needed - annualIncome)} short` }) : undefined}
+          />
+        ) : (
+          <SummaryTile
+            className="bg-lilac"
+            label="Your income"
+            value={annualIncome ? formatMoney(annualIncome) : "—"}
+            unit={annualIncome ? "/yr" : undefined}
+            caption={annualIncome ? "Gross, after the move" : <a href="/bills" className="underline">Add income</a>}
+          />
+        )}
       </div>
       {apts.length > 0 && (
         <div className="flex gap-2 overflow-x-auto pb-1">

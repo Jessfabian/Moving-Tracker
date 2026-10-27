@@ -267,20 +267,39 @@ function ListingImport({ draft, setDraft }: { draft: Row; setDraft: (fn: (d: Row
     }
   };
 
-  const fromText = async () => {
-    const info = parseListingText(pasted);
+  const fromText = async (text = pasted) => {
+    const info = parseListingText(text);
     const summary = listingSummary(info);
-    if (!summary) return setMsg("Couldn't find rent, beds or an address in that text.");
-    await apply(info);
-    setMsg(`Filled in from the text: ${summary}. Fields you already had stay as they are.`);
+    if (!summary) {
+      setPasted(text);
+      setPasteOpen(true);
+      return setMsg("Couldn't find rent, beds or an address in that text. Make sure you copied the whole listing page.");
+    }
+    await apply(info, /^https?:\/\//i.test(url.trim()) ? url.trim() : undefined);
+    setMsg(`Filled in: ${summary}. Review below, then save.`);
     setPasted("");
     setPasteOpen(false);
+  };
+
+  const fromClipboard = async () => {
+    try {
+      const text = (await navigator.clipboard.readText()).trim();
+      if (!text) return setMsg("The clipboard is empty — copy the listing page first.");
+      if (/^https?:\/\/\S+$/i.test(text)) {
+        setUrl(text);
+        return void run(text);
+      }
+      await fromText(text);
+    } catch {
+      setPasteOpen(true);
+      setMsg("Tap and hold in the box below, then tap Paste.");
+    }
   };
 
   return (
     <div className="rounded-3xl bg-ink p-4 text-white">
       <div className="mb-1 font-display text-lg font-bold tracking-tight">Import from a listing link</div>
-      <p className="mb-3 text-xs text-white/60">Apartments.com, Zillow, FirstKey, a building&apos;s own site… Links from work e-mail (urldefense / Safe Links) work too. We&apos;ll pull the photos, address, rent, beds and size.</p>
+      <p className="mb-3 text-[13px] text-white/60">Paste a link from Zillow, FirstKey, a building&apos;s own site… We&apos;ll pull the photos, address, rent, beds and size. For Apartments.com, copy the page text instead (steps below).</p>
       <div className="flex gap-2">
         <input
           className="input border-white/10 bg-white/10 text-white placeholder:text-white/40 focus:bg-white/15"
@@ -294,6 +313,10 @@ function ListingImport({ draft, setDraft }: { draft: Row; setDraft: (fn: (d: Row
               e.preventDefault();
               setUrl(t);
               void run(t);
+            } else if (t.includes("\n")) {
+              // Whole page text pasted into the link box — read it as listing text.
+              e.preventDefault();
+              void fromText(t);
             }
           }}
           onKeyDown={(e) => {
@@ -308,16 +331,37 @@ function ListingImport({ draft, setDraft }: { draft: Row; setDraft: (fn: (d: Row
         </button>
       </div>
       {msg && <p className="mt-2 text-xs text-white/80">{msg}</p>}
-      <button type="button" className="mt-2 text-xs font-semibold text-lime underline-offset-2 hover:underline" onClick={() => setPasteOpen((o) => !o)}>
-        {pasteOpen ? "Hide" : "Or paste the listing's text"}
+      <button type="button" className="mt-2 min-h-11 text-[13px] font-semibold text-lime underline-offset-2 hover:underline" onClick={() => setPasteOpen((o) => !o)}>
+        {pasteOpen ? "Hide" : "Site blocked? Copy the page instead"}
       </button>
       {pasteOpen && (
-        <div className="mt-2 space-y-2">
-          <p className="text-xs text-white/60">On the listing page press Ctrl+A then Ctrl+C (on a phone: Select all → Copy), and paste here.</p>
-          <textarea className="input min-h-24 border-white/10 bg-white/10 text-white placeholder:text-white/40" placeholder="Paste the page text…" value={pasted} onChange={(e) => setPasted(e.target.value)} />
-          <button type="button" className="btn bg-white/15 text-white hover:bg-white/25" disabled={!pasted.trim()} onClick={() => void fromText()}>
-            Fill from text
+        <div className="space-y-2">
+          <ol className="list-decimal space-y-0.5 pl-5 text-[13px] text-white/70">
+            <li>Open the listing in Safari (Apartments.com blocks apps from reading it).</li>
+            <li>Tap and hold any text on the page, then tap <b>Select All</b> → <b>Copy</b>. On a computer: Ctrl+A, Ctrl+C.</li>
+            <li>Come back here and tap <b>Paste listing</b>.</li>
+          </ol>
+          <button type="button" className="btn w-full bg-lime text-ink hover:brightness-95" onClick={() => void fromClipboard()}>
+            Paste listing
           </button>
+          <textarea
+            className="input min-h-24 border-white/10 bg-white/10 text-white placeholder:text-white/40"
+            placeholder="…or paste the page text here"
+            value={pasted}
+            onChange={(e) => setPasted(e.target.value)}
+            onPaste={(e) => {
+              const t = e.clipboardData.getData("text");
+              if (t.trim()) {
+                e.preventDefault();
+                void fromText(t);
+              }
+            }}
+          />
+          {pasted.trim() && (
+            <button type="button" className="btn bg-white/15 text-white hover:bg-white/25" onClick={() => void fromText()}>
+              Fill from text
+            </button>
+          )}
         </div>
       )}
       {Array.isArray(draft.image_urls) && draft.image_urls.length > 0 && <Gallery urls={draft.image_urls as string[]} className="mt-3" />}
@@ -485,9 +529,9 @@ export function EntityForm<T extends TableName>({
       {sections.map((s) => (
         <fieldset key={s.name} className="space-y-3">
           {s.name && <legend className="mb-2 text-sm font-bold text-gray-800">{s.name}</legend>}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 @md:grid-cols-2">
             {s.fields.map((f) => (
-              <div key={f.key} className={f.type === "textarea" || f.type === "media" || f.type === "tags" ? "sm:col-span-2" : ""}>
+              <div key={f.key} className={f.type === "textarea" || f.type === "media" || f.type === "tags" ? "@md:col-span-2" : ""}>
                 {f.type !== "boolean" && (
                   <label className="label" htmlFor={`f-${f.key}`}>
                     {f.label}
@@ -501,7 +545,7 @@ export function EntityForm<T extends TableName>({
           </div>
         </fieldset>
       ))}
-      <div className="sticky bottom-0 -mx-5 flex gap-2 border-t border-gray-200 bg-white px-5 py-3">
+      <div className="sheet-footer sticky bottom-0 -mx-5 flex gap-2 border-t border-gray-200 bg-white px-5 py-3">
         <button className="btn-primary flex-1" type="submit">
           {submitLabel ?? (row ? "Save changes" : `Add ${schema.singular.toLowerCase()}`)}
         </button>

@@ -235,6 +235,16 @@ input[type="checkbox"] {
   accent-color: var(--ink);
 }
 
+@layer base {
+  /* Keep checkboxes/radios full size when their label text wraps in a flex row. */
+  input[type="checkbox"],
+  input[type="radio"] {
+    flex: none;
+    width: 1.125rem;
+    height: 1.125rem;
+  }
+}
+
 /* ---------- Phone form fixes ---------- */
 @layer base {
   /* Let fields shrink inside grid rows instead of spilling over their neighbours. */
@@ -426,6 +436,15 @@ main > * {
 
 .safe-bottom {
   padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Save bar in a sheet: flush with the bottom edge (no gap for fields to peek through) and clear of the home indicator. */
+.duo-panel .sheet-footer,
+.duo-modal .sheet-footer {
+  --sheet-pad: max(1.5rem, env(safe-area-inset-bottom));
+  bottom: calc(-1 * var(--sheet-pad));
+  margin-bottom: calc(-1 * var(--sheet-pad));
+  padding-bottom: calc(0.75rem + var(--sheet-pad));
 }
 
 /* ---------- iPhone Duo: keep sheets and the tab bar off the hinge ---------- */
