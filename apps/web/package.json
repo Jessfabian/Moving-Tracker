@@ -10,6 +10,8 @@
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^1.1.1",
+    "@moving/shared": "*",
+    "@supabase/supabase-js": "^2.50.0",
     "@zxing/browser": "^0.2.1",
     "@zxing/library": "^0.23.0",
     "leaflet": "^1.9.4",
