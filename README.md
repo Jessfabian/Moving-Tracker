@@ -60,7 +60,7 @@ Optional sync: set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY
 
 iPhone Duo behaviour:
 
-- **Outer display / landscape:** the header and bottom tab bar collapse into a side rail on the trailing edge, with compact page headers to save height.
+- **Vertical controls (per Apple's iPhone Duo guidelines):** when closed (outer display) and whenever the phone is sideways, the bottom tab bar moves to the right edge as icon-only buttons: Back and More at the top, tabs at the bottom. Only a tall upright screen (regular iPhone, or the Duo opened upright) keeps the bottom bar. Override per device in **More → Navigation bar** (Auto / Right side / Bottom), also in Settings.
 - **Unfolded (two segments):** detail sheets dock in the second segment so the list stays usable in the first. Grids use even columns so nothing straddles the hinge. Dialogs avoid the hinge. These rules use the CSS viewport-segments media queries and are ignored on single-screen devices.
 - Safe areas (notch, home indicator, side controls) are respected everywhere.
 

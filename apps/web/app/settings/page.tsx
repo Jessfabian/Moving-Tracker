@@ -3,6 +3,7 @@
 import { listHouseholdMembers, MovingStore, type HouseholdMember } from "@moving/shared";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { NavPositionPicker } from "@/components/NavPositionPicker";
 import { PageHeader } from "@/components/ui";
 import { idbKV } from "@/lib/kv";
 import { useApp, useSyncStatus } from "@/lib/store-context";
@@ -54,6 +55,12 @@ export default function SettingsPage() {
             </button>
           </div>
         </div>
+      </section>
+
+      <section className="card space-y-3">
+        <h2 className="font-bold">📱 Navigation bar</h2>
+        <p className="text-sm text-gray-600">Where the main tabs sit on a phone. Auto puts them on the right edge for square or sideways screens such as the closed iPhone Duo. Choose Right side to always keep them there on this device.</p>
+        <NavPositionPicker />
       </section>
 
       <section className="card space-y-4">

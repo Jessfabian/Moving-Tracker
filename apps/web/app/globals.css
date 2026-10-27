@@ -2,11 +2,25 @@
 
 /*
  * iPhone Duo / dual-screen:
- *  - short: the wide, short outer display (and any phone in landscape) — controls move to the side.
+ *  - short: per Apple's iPhone Duo HIG, bars move to a vertical column on the right everywhere except a
+ *    tall portrait screen. Auto: the compact outer display (portrait but much squarer than a regular
+ *    iPhone) and any landscape phone/inner display. <html class="nav-side"> forces it, "nav-bottom"
+ *    disables it (Settings → Navigation bar, applied before first paint in layout.tsx).
  *  - fold:  the inner display partially folded like a book (two side-by-side viewport segments).
  *  - fold-v: folded like a laptop (one segment above the other).
  */
-@custom-variant short (@media (orientation: landscape) and (max-height: 540px) and (max-width: 1023.98px));
+@custom-variant short {
+  @media (max-width: 1023.98px) {
+    &:where(html.nav-side *) {
+      @slot;
+    }
+    @media (orientation: landscape), (max-width: 599.98px) and (min-aspect-ratio: 3/5) {
+      &:where(html:not(.nav-side):not(.nav-bottom) *) {
+        @slot;
+      }
+    }
+  }
+}
 @custom-variant fold (@media (horizontal-viewport-segments: 2));
 @custom-variant fold-v (@media (vertical-viewport-segments: 2));
 
