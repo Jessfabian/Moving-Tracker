@@ -1,5 +1,6 @@
 "use client";
 
+import { cloudErrorMessage } from "@moving/shared";
 import { useState, type ReactNode } from "react";
 import { useApp } from "@/lib/store-context";
 
@@ -78,7 +79,7 @@ function HouseholdScreen() {
     try {
       await fn();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(cloudErrorMessage(e));
     } finally {
       setBusy(false);
     }

@@ -166,12 +166,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     refreshHouseholds,
     createHousehold: async (name) => {
       const id = await createHousehold(supabase!, name, actorName);
-      await refreshHouseholds();
+      await refreshHouseholds().catch(() => undefined);
       updateSettings({ householdId: id });
     },
     joinHousehold: async (code) => {
       const id = await joinHousehold(supabase!, code, actorName);
-      await refreshHouseholds();
+      await refreshHouseholds().catch(() => undefined);
       updateSettings({ householdId: id });
     },
     signOut: async () => {

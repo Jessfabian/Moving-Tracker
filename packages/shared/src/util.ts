@@ -88,3 +88,23 @@ export function initials(name: string): string {
     .map((p) => p[0]!.toUpperCase())
     .join('');
 }
+
+/** Readable message for Supabase/PostgREST errors (plain objects, not Error instances) plus a setup hint. */
+export function cloudErrorMessage(e: unknown): string {
+  const o = (e ?? {}) as { message?: unknown; code?: unknown; details?: unknown; hint?: unknown; error_description?: unknown };
+  const msg = typeof o.message === 'string' && o.message ? o.message : typeof o.error_description === 'string' ? o.error_description : typeof e === 'string' ? e : '';
+  const code = typeof o.code === 'string' ? o.code : '';
+  const text = msg || (() => { try { return JSON.stringify(e); } catch { return String(e); } })();
+  const lower = `${code} ${text}`.toLowerCase();
+  let hint = '';
+  if (code === 'PGRST202' || code === '42883' || /could not find the function|does not exist/.test(lower))
+    hint = 'The database setup script has not been run (or is out of date). In Supabase → SQL Editor, run supabase/migrations/20261027000000_init.sql and then 20261027130000_fix_invite_code.sql.';
+  else if (code === '42501' || /permission denied/.test(lower))
+    hint = 'The database is missing access permissions. In Supabase → SQL Editor, run supabase/migrations/20261027130000_fix_invite_code.sql.';
+  else if (code === 'PGRST205' || /schema cache/.test(lower))
+    hint = 'Supabase has not picked up the new tables yet. Wait a minute and try again, or run the setup script in SQL Editor.';
+  else if (/jwt|not signed in|invalid api key/.test(lower))
+    hint = 'Sign out and sign back in. If it keeps happening, check the Supabase URL and anon key in Vercel.';
+  else if (/failed to fetch|network/.test(lower)) hint = 'Check your internet connection and the Supabase project URL.';
+  return [code && !text.includes(code) ? `${text} (${code})` : text, hint].filter(Boolean).join(' — ');
+}

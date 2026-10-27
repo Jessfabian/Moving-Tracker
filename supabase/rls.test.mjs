@@ -22,6 +22,9 @@ await db.exec(`
   alter table storage.objects enable row level security;
   create function storage.foldername(name text) returns text[] language sql immutable as $$ select (string_to_array(name, '/'))[1:array_length(string_to_array(name, '/'), 1) - 1] $$;
   create publication supabase_realtime;
+  -- Like Supabase: extensions live in their own schema, not public.
+  create schema extensions;
+  create extension pgcrypto schema extensions;
 `);
 
 for (const f of readdirSync(join(here, 'migrations')).sort()) {
@@ -30,10 +33,11 @@ for (const f of readdirSync(join(here, 'migrations')).sort()) {
 }
 
 await db.exec(`
-  grant usage on schema public, storage, auth to authenticated;
-  grant all on all tables in schema public to authenticated;
+  -- Public-schema access must come from the migrations themselves (newer Supabase projects don't auto-grant).
+  revoke all on all tables in schema public from public;
+  grant usage on schema storage, auth to authenticated;
   grant all on all tables in schema storage to authenticated;
-  grant execute on all functions in schema public, auth, storage to authenticated;
+  grant execute on all functions in schema auth, storage to authenticated;
 `);
 
 const A = '00000000-0000-0000-0000-00000000000a';

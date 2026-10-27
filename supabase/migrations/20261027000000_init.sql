@@ -7,7 +7,7 @@ create extension if not exists pgcrypto;
 create table if not exists public.households (
   id uuid primary key default gen_random_uuid(),
   name text not null,
-  invite_code text not null unique default upper(substr(encode(gen_random_bytes(6), 'hex'), 1, 8)),
+  invite_code text not null unique default upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 8)),
   created_by uuid references auth.users (id) on delete set null,
   created_at timestamptz not null default now()
 );
@@ -297,3 +297,10 @@ create policy media_update on storage.objects for update
 drop policy if exists media_delete on storage.objects;
 create policy media_delete on storage.objects for delete
   using (bucket_id = 'media' and public.can_edit_household(((storage.foldername(name))[1])::uuid));
+
+-- Explicit API access (newer Supabase projects don't auto-grant new tables to signed-in users).
+-- Row Level Security above still limits every row to members of the household.
+grant usage on schema public to anon, authenticated;
+grant select, insert, update, delete on all tables in schema public to authenticated;
+grant execute on function public.create_household(text, text), public.join_household(text, text),
+  public.is_household_member(uuid), public.can_edit_household(uuid) to authenticated;

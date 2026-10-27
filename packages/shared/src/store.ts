@@ -2,7 +2,7 @@ import { emptySnapshot, type Snapshot } from './csv';
 import { DEFAULTS, SCHEMAS } from './schemas';
 import type { Activity, BaseRow, MediaRef, NewRow, TableMap, TableName } from './types';
 import { TABLES } from './types';
-import { nowIso, uuid } from './util';
+import { cloudErrorMessage, nowIso, uuid } from './util';
 
 /** Minimal async key-value storage (IndexedDB on web, SQLite kv-store on mobile). */
 export interface KV {
@@ -301,7 +301,7 @@ export class MovingStore {
       await this.flushToDisk();
       this.status = { ...this.status, syncing: false, lastSync: ts, error: null };
     } catch (e) {
-      this.status = { ...this.status, syncing: false, error: e instanceof Error ? e.message : String(e) };
+      this.status = { ...this.status, syncing: false, error: e instanceof Error ? e.message : cloudErrorMessage(e) };
     }
     this.emit();
   }
