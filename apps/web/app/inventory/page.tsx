@@ -261,7 +261,7 @@ export default function InventoryPage() {
       )}
 
       {items.length ? (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+        <div className="duo-even grid grid-cols-2 gap-3 sm:grid-cols-3 short:grid-cols-4 lg:grid-cols-4 xl:grid-cols-5">
           {items.map((i) => {
             const box = db.boxes.find((b) => b.id === i.box_id);
             const r = !roomId ? rooms.find((x) => x.id === i.room_id) : null;

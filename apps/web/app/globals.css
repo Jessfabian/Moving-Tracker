@@ -1,6 +1,16 @@
 @import "tailwindcss";
 
 /*
+ * iPhone Duo / dual-screen:
+ *  - short: the wide, short outer display (and any phone in landscape) — controls move to the side.
+ *  - fold:  the inner display partially folded like a book (two side-by-side viewport segments).
+ *  - fold-v: folded like a laptop (one segment above the other).
+ */
+@custom-variant short (@media (orientation: landscape) and (max-height: 540px) and (max-width: 1023.98px));
+@custom-variant fold (@media (horizontal-viewport-segments: 2));
+@custom-variant fold-v (@media (vertical-viewport-segments: 2));
+
+/*
  * Design system — "Paper & Ink"
  * Warm paper background, ink-black panels, one vivid tangerine accent,
  * bold grotesque display type and modular bento cards.
@@ -203,6 +213,50 @@ main > * {
 
 .safe-bottom {
   padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* ---------- iPhone Duo: keep sheets and the tab bar off the hinge ---------- */
+@media (horizontal-viewport-segments: 2) {
+  /* Detail sheets fill the trailing half; the page stays visible and tappable on the leading half (list ↔ detail). */
+  .duo-sheet {
+    left: env(viewport-segment-left 1 0) !important;
+    padding: 0 !important;
+  }
+  .duo-sheet > .duo-backdrop {
+    display: none;
+  }
+  .duo-sheet > .duo-panel {
+    max-width: none !important;
+    border-radius: 0 !important;
+  }
+  /* Pop-ups centre in the trailing half instead of straddling the fold. */
+  .duo-modal {
+    padding-left: env(viewport-segment-left 1 0);
+  }
+  /* Tab bar sits wholly in the leading half. */
+  .duo-tabbar {
+    right: calc(100vw - env(viewport-segment-right 0 0) + 0.75rem) !important;
+  }
+  /* Even columns so cards divide cleanly at the fold. */
+  .duo-even {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  }
+}
+@media (vertical-viewport-segments: 2) {
+  .duo-sheet {
+    top: env(viewport-segment-top 0 1) !important;
+    padding: 0 !important;
+  }
+  .duo-sheet > .duo-backdrop {
+    display: none;
+  }
+  .duo-sheet > .duo-panel {
+    max-width: none !important;
+    border-radius: 0 !important;
+  }
+  .duo-modal {
+    padding-top: env(viewport-segment-top 0 1);
+  }
 }
 /* ---------- Map pins (Leaflet divIcon) ---------- */
 .mt-pin-wrap { background: none; border: 0; }

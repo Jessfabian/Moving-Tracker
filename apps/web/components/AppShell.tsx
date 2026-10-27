@@ -139,14 +139,14 @@ export function AppShell({ children }: { children: ReactNode }) {
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-30 flex items-center justify-between bg-paper/80 px-4 py-3 backdrop-blur-xl lg:hidden">
+          <header className="sticky top-0 z-30 flex items-center justify-between bg-paper/80 px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur-xl lg:hidden short:hidden">
             <Logo />
             <SyncBadge />
           </header>
-          <main className="mx-auto w-full max-w-[1180px] flex-1 px-4 pt-3 pb-32 sm:px-6 lg:px-10 lg:pt-10 lg:pb-14">{store ? children : <div className="text-gray-500">Loading your move…</div>}</main>
+          <main className="mx-auto w-full max-w-[1180px] flex-1 px-4 pt-3 pb-32 sm:px-6 lg:px-10 lg:pt-10 lg:pb-14 short:pt-[max(0.75rem,env(safe-area-inset-top))] short:pb-6 short:pr-[calc(5.5rem+env(safe-area-inset-right))] short:pl-[max(1.5rem,env(safe-area-inset-left))]">{store ? children : <div className="text-gray-500">Loading your move…</div>}</main>
         </div>
 
-        <nav className="fixed inset-x-3 bottom-3 z-40 mb-[env(safe-area-inset-bottom)] grid grid-cols-5 gap-1 rounded-full bg-ink p-1.5 shadow-[0_18px_40px_-14px_rgba(13,13,15,0.6)] lg:hidden">
+        <nav aria-label="Main" className="duo-tabbar fixed inset-x-3 bottom-3 z-40 mb-[env(safe-area-inset-bottom)] grid grid-cols-5 gap-1 rounded-full bg-ink p-1.5 shadow-[0_18px_40px_-14px_rgba(13,13,15,0.6)] lg:hidden short:hidden">
           {MOBILE_TABS.map((t) => {
             const active = t.href === "/" ? path === "/" : path.startsWith(t.href);
             return (
@@ -166,10 +166,35 @@ export function AppShell({ children }: { children: ReactNode }) {
           </button>
         </nav>
 
+        {/* Outer display / landscape phone: tab bar on the trailing edge, keeping the short screen's height for content. */}
+        <nav
+          aria-label="Main"
+          className="fixed inset-y-2 right-2 z-40 mr-[env(safe-area-inset-right)] hidden w-[4.5rem] flex-col justify-center gap-1 rounded-[2rem] bg-ink p-1.5 shadow-[0_18px_40px_-14px_rgba(13,13,15,0.6)] short:flex"
+        >
+          {MOBILE_TABS.map((t) => {
+            const active = t.href === "/" ? path === "/" : path.startsWith(t.href);
+            return (
+              <Link
+                key={t.href}
+                href={t.href}
+                aria-label={t.label}
+                className={`flex flex-1 flex-col items-center justify-center rounded-[1.4rem] text-[10px] leading-tight font-semibold transition ${active ? "bg-lime text-ink" : "text-white/60"}`}
+              >
+                <span className="text-lg leading-5">{t.icon}</span>
+                {t.label}
+              </Link>
+            );
+          })}
+          <button onClick={() => setMenu(true)} className="flex flex-1 flex-col items-center justify-center rounded-[1.4rem] text-[10px] leading-tight font-semibold text-white/60">
+            <span className="text-lg leading-5">☰</span>
+            More
+          </button>
+        </nav>
+
         {menu && (
-          <div className="fixed inset-0 z-50 lg:hidden">
+          <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="Menu">
             <div className="absolute inset-0 bg-ink/40 backdrop-blur-sm" onClick={() => setMenu(false)} />
-            <div className="absolute inset-y-0 left-0 w-[18rem] space-y-6 overflow-y-auto bg-ink p-4 text-white shadow-2xl">
+            <div className="absolute inset-y-0 left-0 w-[18rem] space-y-6 overflow-y-auto bg-ink p-4 pt-[max(1rem,env(safe-area-inset-top))] pl-[max(1rem,env(safe-area-inset-left))] text-white shadow-2xl short:right-0 short:left-auto short:pr-[calc(1rem+env(safe-area-inset-right))]">
               <Logo dark />
               <Countdown />
               <NavLinks onNavigate={() => setMenu(false)} />

@@ -38,9 +38,9 @@ export function Drawer({ open, onClose, title, children, wide }: { open: boolean
   if (!open) return null;
   return (
     <Portal>
-    <div className="fixed inset-0 z-50 flex justify-end p-0 sm:p-3" role="dialog" aria-modal="true">
-      <div className="absolute inset-0 bg-ink/40 backdrop-blur-[2px]" onClick={onClose} />
-      <div className={`relative flex h-full w-full flex-col overflow-hidden bg-paper shadow-2xl sm:rounded-[1.75rem] ${wide ? "max-w-3xl" : "max-w-xl"}`}>
+    <div className="duo-sheet fixed inset-0 z-50 flex justify-end p-0 sm:p-3 short:p-0" role="dialog" aria-modal="true">
+      <div className="duo-backdrop absolute inset-0 bg-ink/40 backdrop-blur-[2px]" onClick={onClose} />
+      <div className={`duo-panel relative flex h-full w-full short:rounded-none flex-col overflow-hidden bg-paper shadow-2xl sm:rounded-[1.75rem] ${wide ? "max-w-3xl" : "max-w-xl"}`}>
         <div className="flex items-center justify-between gap-3 px-6 pt-5 pb-3">
           <h2 className="font-display text-2xl font-bold tracking-tight">{title}</h2>
           <CloseButton onClose={onClose} />
@@ -57,9 +57,9 @@ export function Modal({ open, onClose, title, children }: { open: boolean; onClo
   if (!open) return null;
   return (
     <Portal>
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center" role="dialog" aria-modal="true">
+    <div className="duo-modal fixed inset-0 z-50 flex items-end justify-center sm:items-center" role="dialog" aria-modal="true">
       <div className="absolute inset-0 bg-ink/50 backdrop-blur-[2px]" onClick={onClose} />
-      <div className="relative max-h-[92dvh] w-full max-w-lg overscroll-contain overflow-y-auto rounded-t-[1.75rem] bg-paper p-6 shadow-2xl sm:rounded-[1.75rem]">
+      <div className="relative max-h-[92dvh] w-full max-w-lg short:max-h-[96dvh] overscroll-contain overflow-y-auto rounded-t-[1.75rem] bg-paper p-6 shadow-2xl sm:rounded-[1.75rem]">
         <div className="mb-4 flex items-center justify-between gap-3">
           <h2 className="font-display text-2xl font-bold tracking-tight">{title}</h2>
           <CloseButton onClose={onClose} />
@@ -140,17 +140,17 @@ export function PageHeader({ title, icon, subtitle, actions, eyebrow }: { title:
   const words = title.split(" ");
   const last = words.pop();
   return (
-    <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+    <div className="mb-6 flex flex-wrap items-end justify-between gap-4 short:mb-4 short:gap-3">
       <div className="min-w-0 max-w-3xl">
         <div className="eyebrow flex items-center gap-2">
           {icon && <span className="grid h-6 w-6 place-items-center rounded-lg bg-white text-sm shadow-sm">{icon}</span>}
           {eyebrow ?? group ?? "Moving tracker"}
         </div>
-        <h1 className="h1 mt-2">
+        <h1 className="h1 mt-2 short:mt-1 short:text-[2rem]">
           {words.length ? `${words.join(" ")} ` : ""}
           <span className="highlight">{last}</span>
         </h1>
-        {subtitle && <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-gray-600">{subtitle}</p>}
+        {subtitle && <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-gray-600 short:mt-1 short:line-clamp-1 short:text-sm">{subtitle}</p>}
       </div>
       {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
     </div>
