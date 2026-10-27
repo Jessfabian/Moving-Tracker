@@ -3,6 +3,7 @@
 import { cloudErrorMessage } from "@moving/shared";
 import { useState, type ReactNode } from "react";
 import { useApp } from "@/lib/store-context";
+import { NavPositionPicker } from "./NavPositionPicker";
 
 function Centered({ children }: { children: ReactNode }) {
   return (
@@ -10,6 +11,10 @@ function Centered({ children }: { children: ReactNode }) {
       <div className="card w-full max-w-md space-y-4 p-6">
         <div className="text-center text-2xl font-extrabold text-indigo-700">📦 Moving Tracker</div>
         {children}
+        <div className="space-y-1.5 border-t border-gray-100 pt-4 lg:hidden">
+          <div className="label">📱 Navigation bar (after you sign in)</div>
+          <NavPositionPicker />
+        </div>
       </div>
     </div>
   );
