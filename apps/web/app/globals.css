@@ -3,8 +3,8 @@
 /*
  * iPhone Duo / dual-screen:
  *  - short: per Apple's iPhone Duo HIG, bars move to a vertical column on the right everywhere except a
- *    tall portrait screen. Auto: the compact outer display (portrait but much squarer than a regular
- *    iPhone) and any landscape phone/inner display. <html class="nav-side"> forces it, "nav-bottom"
+ *    wide portrait screen. Auto: the closed outer display (any phone-width screen under 600px) and any
+ *    landscape phone/inner display; the opened inner display in portrait keeps the bottom bar. <html class="nav-side"> forces it, "nav-bottom"
  *    disables it (Settings → Navigation bar, applied before first paint in layout.tsx).
  *  - fold:  the inner display partially folded like a book (two side-by-side viewport segments).
  *  - fold-v: folded like a laptop (one segment above the other).
@@ -14,7 +14,7 @@
     &:where(html.nav-side *) {
       @slot;
     }
-    @media (orientation: landscape), (max-width: 599.98px) and (min-aspect-ratio: 3/5) {
+    @media (orientation: landscape), (max-width: 599.98px) {
       &:where(html:not(.nav-side):not(.nav-bottom) *) {
         @slot;
       }
@@ -213,6 +213,42 @@ h3 {
 
 input[type="checkbox"] {
   accent-color: var(--ink);
+}
+
+/* ---------- Phone form fixes ---------- */
+@layer base {
+  /* Let fields shrink inside grid rows instead of spilling over their neighbours. */
+  :where(.grid) > * {
+    min-width: 0;
+  }
+  input,
+  select,
+  textarea {
+    min-width: 0;
+    max-width: 100%;
+  }
+  /* iOS Safari gives date/time inputs a fixed intrinsic width and zero height when empty, so they overlap. */
+  input[type="date"],
+  input[type="time"],
+  input[type="datetime-local"],
+  input[type="month"] {
+    -webkit-appearance: none;
+    appearance: none;
+    display: block;
+    min-height: 2.75rem;
+  }
+  input::-webkit-date-and-time-value {
+    min-height: 1.25rem;
+    text-align: left;
+  }
+}
+/* 16px text stops iOS from zooming the page when a field is tapped. */
+@media (max-width: 1023.98px) {
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
 }
 
 main > * {

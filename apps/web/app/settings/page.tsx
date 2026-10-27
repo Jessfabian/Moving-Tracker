@@ -59,7 +59,7 @@ export default function SettingsPage() {
 
       <section className="card space-y-3">
         <h2 className="font-bold">📱 Navigation bar</h2>
-        <p className="text-sm text-gray-600">Where the main tabs sit on a phone. Auto puts them on the right edge for square or sideways screens such as the closed iPhone Duo. Choose Right side to always keep them there on this device.</p>
+        <p className="text-sm text-gray-600">Where the main tabs sit on a phone. Auto puts them on the right edge on phone-width screens (like the closed iPhone Duo) and sideways screens, and at the bottom on the opened Duo held upright. Choose Right side or Bottom to always keep them there on this device.</p>
         <NavPositionPicker />
       </section>
 
