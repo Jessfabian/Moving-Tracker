@@ -105,6 +105,26 @@
   --color-slate-950: #0d0d0f;
 
   --animate-rise: rise 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
+  --animate-sheet: sheet 0.32s cubic-bezier(0.2, 0.9, 0.25, 1) backwards;
+  --animate-pop: pop 0.2s cubic-bezier(0.2, 0.9, 0.25, 1) backwards;
+  --animate-fade: fade 0.2s ease-out backwards;
+}
+
+@keyframes sheet {
+  from {
+    transform: translateY(100%);
+  }
+}
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateX(12px);
+  }
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
 }
 
 @keyframes rise {
@@ -249,6 +269,130 @@ input[type="checkbox"] {
   textarea {
     font-size: 16px;
   }
+}
+
+/* ---------- iPhone (Apple HIG): 44pt targets, 34pt large titles, calmer cards ---------- */
+@layer components {
+@media (max-width: 1023.98px) {
+  .btn-primary,
+  .btn-accent,
+  .btn-secondary,
+  .btn-ghost,
+  .btn-danger {
+    min-height: 2.75rem;
+    font-size: 15px;
+  }
+  .input {
+    min-height: 2.75rem;
+    border-radius: 0.875rem;
+  }
+  .h1 {
+    font-size: 34px;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    font-weight: 800;
+  }
+  .card,
+  .card-ink {
+    border-radius: 1.25rem;
+    padding: 1rem;
+  }
+  .tile {
+    border-radius: 1.25rem;
+    padding: 1rem;
+  }
+  .tile:hover {
+    transform: none;
+  }
+}
+}
+@media (max-width: 1023.98px) {
+  .font-display.text-6xl,
+  .font-display.text-7xl,
+  .font-display.text-8xl {
+    font-size: 3rem;
+  }
+}
+
+/* iOS pull-down menu */
+.ios-menu {
+  overflow: hidden;
+  border-radius: 14px;
+  background: rgba(250, 250, 252, 0.92);
+  -webkit-backdrop-filter: blur(24px) saturate(1.8);
+  backdrop-filter: blur(24px) saturate(1.8);
+  box-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.08),
+    0 18px 50px -12px rgba(0, 0, 0, 0.35);
+}
+.ios-menu > * {
+  display: flex !important;
+  width: 100% !important;
+  min-height: 2.75rem;
+  justify-content: flex-start !important;
+  gap: 0.75rem;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0.7rem 1rem !important;
+  font-size: 17px !important;
+  font-weight: 400 !important;
+  color: #000 !important;
+  transform: none !important;
+  text-align: left;
+}
+.ios-menu > * + * {
+  box-shadow: inset 0 0.5px 0 rgba(60, 60, 67, 0.29) !important;
+}
+.ios-menu > *:active {
+  background: rgba(0, 0, 0, 0.06) !important;
+}
+.ios-menu > .btn-danger {
+  color: #ff3b30 !important;
+}
+.ios-menu > [disabled] {
+  opacity: 0.35;
+}
+
+/* iOS inset-grouped list */
+.ios-list {
+  overflow: hidden;
+  border-radius: 1.25rem;
+  background: #fff;
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+}
+.ios-list > * {
+  position: relative;
+}
+.ios-list > * + *::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: var(--ios-sep, 1rem);
+  height: 0.5px;
+  background: rgba(60, 60, 67, 0.2);
+}
+.ios-popup {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  border-radius: 999px;
+  padding: 0.3rem 1.4rem 0.3rem 0.65rem;
+  font-size: 13px;
+  font-weight: 600;
+  min-height: 1.9rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath d='M2 3.5 5 6.5 8 3.5' fill='none' stroke='%23888' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.5rem center;
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }
 
 main > * {

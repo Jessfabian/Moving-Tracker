@@ -8,7 +8,7 @@ import { MOBILE_TABS, NAV_GROUPS } from "@/lib/nav";
 import { useApp, useDb, useSyncStatus } from "@/lib/store-context";
 import { CloudGate } from "./CloudGate";
 import { useSyncMoveDistance } from "./MoveDistance";
-import { NavPositionPicker } from "./NavPositionPicker";
+import { MoreSheet } from "./MoreSheet";
 
 function SyncBadge({ dark }: { dark?: boolean }) {
   const status = useSyncStatus();
@@ -116,6 +116,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const path = usePathname();
   const router = useRouter();
   const [menu, setMenu] = useState(false);
+  const closeMenu = useCallback(() => setMenu(false), []);
 
   const needsSetup = !!store && store.loaded && (store.status.mode === "local" || !!store.status.lastSync) && db.moves.length === 0 && path !== "/setup" && path !== "/settings";
   useEffect(() => {
@@ -200,17 +201,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             })}
           </div>
         </nav>
-        {menu && (
-          <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="Menu">
-            <div className="absolute inset-0 bg-ink/40 backdrop-blur-sm" onClick={() => setMenu(false)} />
-            <div className="absolute inset-y-0 left-0 w-[18rem] space-y-6 overflow-y-auto bg-ink p-4 pt-[max(1rem,env(safe-area-inset-top))] pl-[max(1rem,env(safe-area-inset-left))] text-white shadow-2xl short:right-0 short:left-auto short:pr-[calc(1rem+env(safe-area-inset-right))]">
-              <Logo dark />
-              <Countdown />
-              <NavLinks onNavigate={() => setMenu(false)} />
-              <NavPositionPicker dark />
-            </div>
-          </div>
-        )}
+        {menu && <MoreSheet onClose={closeMenu} />}
       </div>
     </CloudGate>
   );

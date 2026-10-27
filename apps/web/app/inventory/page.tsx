@@ -13,6 +13,8 @@ import { useDb, useStore } from "@/lib/store-context";
 
 type Editing = { row: Item | null; initial?: Partial<Item> } | null;
 
+const SHORT_DISPOSITION: Record<string, string> = { undecided: "Decide", move: "Keep", give: "Give", store: "Store", trash: "Trash" };
+
 export default function InventoryPage() {
   const db = useDb();
   const store = useStore();
@@ -129,8 +131,8 @@ export default function InventoryPage() {
       <input ref={photoRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => void onPhotos(e.target.files).then(() => (e.target.value = ""))} />
       {busy && <p className="mb-3 rounded-lg bg-indigo-50 p-2 text-sm text-indigo-800">{busy}</p>}
 
-      <div className="-mx-4 mb-5 flex gap-3 overflow-x-auto px-4 pb-2 sm:mx-0 sm:grid sm:grid-cols-3 sm:overflow-visible sm:px-0 lg:grid-cols-4 xl:grid-cols-5">
-        <button onClick={() => setRoomId("")} className={`card min-w-36 flex-none text-left ${roomId === "" ? "ring-2 ring-indigo-500" : ""}`}>
+      <div className="no-scrollbar -mx-4 mb-5 flex gap-3 overflow-x-auto px-4 pb-2 sm:mx-0 sm:grid sm:grid-cols-3 sm:overflow-visible sm:px-0 lg:grid-cols-4 xl:grid-cols-5">
+        <button onClick={() => setRoomId("")} className={`card min-w-36 flex-none py-3 text-left ${roomId === "" ? "ring-2 ring-indigo-500" : ""}`}>
           <div className="font-bold">🏠 Whole house</div>
           <div className="text-xs text-gray-500">
             {db.items.length} items · {formatMoney(sum(db.items.map((i) => (i.est_value ?? 0) * (i.quantity || 1))))}
@@ -139,7 +141,7 @@ export default function InventoryPage() {
         {rooms.map((r) => {
           const s = roomStats(r.id);
           return (
-            <button key={r.id} onClick={() => setRoomId(r.id)} className={`card min-w-36 flex-none text-left ${roomId === r.id ? "ring-2 ring-indigo-500" : ""}`} style={{ borderLeft: `6px solid ${r.color || "#e5e7eb"}` }}>
+            <button key={r.id} onClick={() => setRoomId(r.id)} className={`card min-w-36 flex-none py-3 text-left ${roomId === r.id ? "ring-2 ring-indigo-500" : ""}`} style={{ borderLeft: `6px solid ${r.color || "#e5e7eb"}` }}>
               <div className="truncate font-bold">{r.name}</div>
               <div className="text-xs text-gray-500">
                 {s.count} items{s.value ? ` · ${formatMoney(s.value)}` : ""}
@@ -149,7 +151,7 @@ export default function InventoryPage() {
           );
         })}
         {roomStats(null).count > 0 && (
-          <button onClick={() => setRoomId("none")} className={`card min-w-36 flex-none text-left ${roomId === "none" ? "ring-2 ring-indigo-500" : ""}`}>
+          <button onClick={() => setRoomId("none")} className={`card min-w-36 flex-none py-3 text-left ${roomId === "none" ? "ring-2 ring-indigo-500" : ""}`}>
             <div className="font-bold">❔ No room</div>
             <div className="text-xs text-gray-500">{roomStats(null).count} items</div>
           </button>
@@ -172,19 +174,19 @@ export default function InventoryPage() {
 
       <div className="card mb-4">
         <label className="label" htmlFor="quick">
-          ⚡ Quick add{room ? ` to ${room.name}` : ""} — one per line or comma separated (“3x dining chair” works)
+          ⚡ Quick add{room ? ` to ${room.name}` : ""}
         </label>
-        <div className="flex gap-2">
-          <textarea id="quick" rows={1} className="input" value={quick} onChange={(e) => setQuick(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), quickAdd())} placeholder="Sofa, Coffee table, 2x lamp" />
-          <button className="btn-primary" onClick={quickAdd} disabled={!quick.trim()}>
+        <div className="flex items-start gap-2">
+          <textarea id="quick" rows={1} className="input min-w-0 flex-1 resize-none" value={quick} onChange={(e) => setQuick(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), quickAdd())} placeholder="Sofa, 2x lamp" />
+          <button className="btn-primary shrink-0" onClick={quickAdd} disabled={!quick.trim()}>
             Add
           </button>
         </div>
       </div>
 
-      <div className="mb-4 flex flex-wrap gap-2">
+      <div className="mb-4 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
         <select
-          className="input w-auto"
+          className="input sm:w-auto"
           aria-label="Room"
           value={roomId}
           onChange={(e) => (e.target.value === "__new" ? setEditRoom("new") : setRoomId(e.target.value))}
@@ -198,8 +200,8 @@ export default function InventoryPage() {
           <option value="none">❔ No room</option>
           <option value="__new">+ New room…</option>
         </select>
-        <input className="input max-w-xs flex-1" placeholder="Search items…" value={q} onChange={(e) => setQ(e.target.value)} />
-        <select className="input w-auto" value={disp} onChange={(e) => setDisp(e.target.value)}>
+        <input type="search" className="input order-first col-span-2 sm:order-none sm:max-w-xs sm:flex-1" placeholder="Search items…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <select className="input sm:w-auto" value={disp} onChange={(e) => setDisp(e.target.value)}>
           <option value="">Any plan</option>
           {DISPOSITIONS.map((d) => (
             <option key={d.value} value={d.value}>
@@ -207,7 +209,7 @@ export default function InventoryPage() {
             </option>
           ))}
         </select>
-        <select className="input w-auto" value={cat} onChange={(e) => setCat(e.target.value)}>
+        <select className="input sm:w-auto" value={cat} onChange={(e) => setCat(e.target.value)}>
           <option value="">Any category</option>
           {ITEM_CATEGORIES.map((d) => (
             <option key={d.value} value={d.value}>
@@ -215,20 +217,20 @@ export default function InventoryPage() {
             </option>
           ))}
         </select>
-        <button className="btn-ghost" onClick={() => setSelected(selected.size === items.length ? new Set() : new Set(items.map((i) => i.id)))}>
+        <button className="btn-secondary" onClick={() => setSelected(selected.size === items.length ? new Set() : new Set(items.map((i) => i.id)))}>
           {selected.size === items.length && items.length ? "Clear selection" : "Select all"}
         </button>
       </div>
 
       {selected.size > 0 && (
-        <div className="sticky top-14 z-20 mb-4 flex flex-wrap items-center gap-2 rounded-2xl bg-gray-900 p-3 text-sm text-white lg:top-2">
-          <span className="font-semibold">{selected.size} selected:</span>
+        <div className="sticky top-14 z-20 mb-4 grid grid-cols-4 gap-2 rounded-2xl bg-gray-900 p-3 text-sm text-white short:top-2 lg:top-2 lg:flex lg:flex-wrap lg:items-center">
+          <span className="col-span-3 self-center font-semibold">{selected.size} selected</span>
           {DISPOSITIONS.map((d) => (
-            <button key={d.value} className="rounded-lg px-2 py-1 font-medium" style={{ background: DISPOSITION_COLORS[d.value] }} onClick={() => bulk({ disposition: d.value as Item["disposition"] })}>
+            <button key={d.value} className="min-h-11 truncate rounded-xl px-2 font-medium lg:min-h-9" style={{ background: DISPOSITION_COLORS[d.value] }} onClick={() => bulk({ disposition: d.value as Item["disposition"] })}>
               {d.label}
             </button>
           ))}
-          <select className="rounded-lg bg-gray-700 px-2 py-1" value="" onChange={(e) => e.target.value && bulk({ room_id: e.target.value })}>
+          <select className="col-span-2 min-h-11 min-w-0 rounded-xl bg-gray-700 px-2 lg:min-h-9" value="" onChange={(e) => e.target.value && bulk({ room_id: e.target.value })}>
             <option value="">Move to room…</option>
             {rooms.map((r) => (
               <option key={r.id} value={r.id}>
@@ -236,7 +238,7 @@ export default function InventoryPage() {
               </option>
             ))}
           </select>
-          <select className="rounded-lg bg-gray-700 px-2 py-1" value="" onChange={(e) => e.target.value && bulk({ box_id: e.target.value })}>
+          <select className="col-span-2 min-h-11 min-w-0 rounded-xl bg-gray-700 px-2 lg:min-h-9" value="" onChange={(e) => e.target.value && bulk({ box_id: e.target.value })}>
             <option value="">Pack in box…</option>
             {[...db.boxes]
               .sort((a, b) => a.number - b.number)
@@ -247,7 +249,7 @@ export default function InventoryPage() {
               ))}
           </select>
           <button
-            className="ml-auto rounded-lg bg-red-600 px-2 py-1"
+            className="col-start-4 row-start-1 min-h-11 rounded-xl bg-red-600 px-2 lg:ml-auto lg:min-h-9"
             onClick={() => {
               if (confirm(`Delete ${selected.size} items?`)) {
                 for (const id of selected) store.remove("items", id);
@@ -260,8 +262,62 @@ export default function InventoryPage() {
         </div>
       )}
 
+      {items.length > 0 && (
+        <div className="ios-list md:grid md:grid-cols-2 lg:hidden" style={{ ["--ios-sep" as string]: "6.25rem" }}>
+          {items.map((i) => {
+            const box = db.boxes.find((b) => b.id === i.box_id);
+            const r = !roomId ? rooms.find((x) => x.id === i.room_id) : null;
+            const color = DISPOSITION_COLORS[i.disposition];
+            return (
+              <div key={i.id} className={`flex min-h-[4.5rem] items-center pr-3 ${selected.has(i.id) ? "bg-indigo-50" : ""}`}>
+                <label className="flex w-10 shrink-0 cursor-pointer items-center justify-center self-stretch">
+                  <input type="checkbox" aria-label={`Select ${i.name}`} className="h-5 w-5 accent-indigo-600" checked={selected.has(i.id)} onChange={() => toggle(i.id)} />
+                </label>
+                <button className="flex min-w-0 flex-1 items-center gap-3 py-2.5 text-left" onClick={() => setEditing({ row: i })}>
+                  {i.photos[0] ? (
+                    <MediaThumb media={i.photos[0]} className="pointer-events-none h-12 w-12 shrink-0 rounded-xl border-0" />
+                  ) : i.image_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={i.image_url} alt="" className="pointer-events-none h-12 w-12 shrink-0 rounded-xl bg-white object-contain p-1 ring-1 ring-gray-100" />
+                  ) : (
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gray-100 text-2xl text-gray-400">{i.barcode ? "▦" : "🛋️"}</div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[17px] leading-snug">
+                      {i.quantity > 1 && <span className="text-gray-500">{i.quantity}× </span>}
+                      {i.name}
+                    </div>
+                    <div className="truncate text-[13px] text-gray-500">
+                      {[r?.name, optionLabel(ITEM_CATEGORIES, i.category), box && `📦 #${box.number}`].filter(Boolean).join(" · ")}
+                    </div>
+                  </div>
+                </button>
+                <div className="flex shrink-0 flex-col items-end gap-1 pl-2">
+                  <select
+                    aria-label={`What to do with ${i.name}`}
+                    className="ios-popup"
+                    style={{ backgroundColor: `${color}1a`, color }}
+                    value={i.disposition}
+                    onChange={(e) => store.update("items", i.id, { disposition: e.target.value as Item["disposition"] })}
+                  >
+                    {DISPOSITIONS.map((d) => (
+                      <option key={d.value} value={d.value}>
+                        {SHORT_DISPOSITION[d.value] ?? d.label}
+                      </option>
+                    ))}
+                  </select>
+                  <span className={`text-[13px] ${i.est_value ? "font-semibold" : "text-gray-400"}`}>
+                    {i.est_value ? formatMoney(i.est_value) : `~${formatMoney(itemPriceIdea(i).likely)}`}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {items.length ? (
-        <div className="duo-even grid grid-cols-2 gap-3 sm:grid-cols-3 short:grid-cols-4 lg:grid-cols-4 xl:grid-cols-5">
+        <div className="duo-even hidden gap-3 lg:grid lg:grid-cols-4 xl:grid-cols-6">
           {items.map((i) => {
             const box = db.boxes.find((b) => b.id === i.box_id);
             const r = !roomId ? rooms.find((x) => x.id === i.room_id) : null;

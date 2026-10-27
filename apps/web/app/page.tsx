@@ -118,7 +118,7 @@ export default function Dashboard() {
             Your move, <span className="highlight">at a glance.</span>
           </h1>
         </div>
-        <div className="flex gap-2">
+        <div className="flex w-full gap-2 sm:w-auto [&>*]:flex-1 sm:[&>*]:flex-none">
           <Link href="/scan" className="btn-secondary">
             ▦ Quick scan
           </Link>
@@ -128,15 +128,15 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-6 xl:grid-cols-12">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-6 xl:grid-cols-12 max-md:[&>*:not(.half)]:col-span-2">
         {/* Hero */}
-        <section className="card-ink relative overflow-hidden p-6 sm:p-8 md:col-span-6 xl:col-span-8">
+        <section className="card-ink relative overflow-hidden p-5 sm:p-8 short:p-5 md:col-span-6 xl:col-span-8">
           <div className="dot-grid pointer-events-none absolute inset-0 opacity-[0.07]" />
-          <div className="relative flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
+          <div className="relative flex flex-row flex-wrap items-end justify-between gap-4 sm:gap-6">
             <div className="min-w-0">
               <div className="eyebrow text-white/50">{move.title}</div>
               <div className="mt-3 flex items-end gap-3">
-                <span className="display text-[5.5rem] leading-[0.8] text-lime sm:text-[8rem]">{d === null ? "—" : Math.abs(d)}</span>
+                <span className="display text-[4.5rem] leading-[0.8] text-lime sm:text-[8rem] short:text-[4.5rem]">{d === null ? "—" : Math.abs(d)}</span>
                 <span className="pb-2 font-display text-xl leading-tight font-semibold text-white/80 sm:text-2xl">
                   {d === null ? (
                     "set your date"
@@ -157,7 +157,7 @@ export default function Dashboard() {
                   )}
                 </span>
               </div>
-              <div className="mt-6 flex flex-wrap items-center gap-3 text-sm">
+              <div className="mt-4 flex flex-wrap items-center gap-2 text-sm sm:mt-6 sm:gap-3 short:mt-4">
                 <span className="rounded-full bg-white/10 px-3 py-1.5 font-semibold">{from}</span>
                 <span className="flex items-center gap-1 text-white/40">
                   <span className="hidden h-px w-10 border-t border-dashed border-white/40 sm:block" />✈
@@ -215,35 +215,35 @@ export default function Dashboard() {
         </section>
 
         {/* Pastel stat tiles */}
-        <TileLink href="/tasks" className={`min-h-36 md:col-span-3 ${ins.tasks.overdue.length ? "bg-blush" : "bg-sage"}`}>
+        <TileLink href="/tasks" className={`half min-h-28 sm:min-h-36 md:col-span-3 ${ins.tasks.overdue.length ? "bg-blush" : "bg-sage"}`}>
           <div className="eyebrow text-ink/60">Overdue</div>
           <div>
-            <div className="display text-5xl">{ins.tasks.overdue.length}</div>
+            <div className="display text-4xl sm:text-5xl">{ins.tasks.overdue.length}</div>
             <div className="text-sm text-ink/70">{ins.tasks.upcoming.length} due in the next 2 weeks</div>
           </div>
         </TileLink>
-        <TileLink href="/inventory" className="min-h-36 bg-sky md:col-span-3">
+        <TileLink href="/inventory" className="half min-h-28 sm:min-h-36 bg-sky md:col-span-3">
           <div className="eyebrow text-ink/60">Inventory</div>
           <div>
-            <div className="display text-5xl">{ins.inventory.items}</div>
+            <div className="display text-4xl sm:text-5xl">{ins.inventory.items}</div>
             <div className="text-sm text-ink/70">
               {formatMoney(ins.inventory.value)} est. · {ins.inventory.photos} photos
             </div>
           </div>
         </TileLink>
-        <TileLink href="/boxes" className="min-h-36 bg-sand md:col-span-3">
+        <TileLink href="/boxes" className="half min-h-28 sm:min-h-36 bg-sand md:col-span-3">
           <div className="eyebrow text-ink/60">Boxes</div>
           <div>
-            <div className="display text-5xl">{ins.boxes.total}</div>
+            <div className="display text-4xl sm:text-5xl">{ins.boxes.total}</div>
             <div className="text-sm text-ink/70">
               {ins.boxes.byStatus.packed ?? 0} packed · {ins.boxes.byStatus.delivered ?? 0} delivered
             </div>
           </div>
         </TileLink>
-        <TileLink href="/budget" className="min-h-36 bg-lilac md:col-span-3">
+        <TileLink href="/budget" className="half min-h-28 sm:min-h-36 bg-lilac md:col-span-3">
           <div className="eyebrow text-ink/60">Moving budget</div>
           <div>
-            <div className="display text-4xl">{formatMoney(ins.budget.actual || ins.budget.estimated)}</div>
+            <div className="display text-[1.75rem] sm:text-4xl">{formatMoney(ins.budget.actual || ins.budget.estimated)}</div>
             <div className="text-sm text-ink/70">
               {ins.budget.quotedMovers ? `best mover quote ${formatMoney(ins.budget.quotedMovers)}` : `${db.quotes.length} mover quotes · get 3+`}
             </div>
