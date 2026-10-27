@@ -1,6 +1,6 @@
 # Moving Tracker
 
-Everything for a long-distance move in one place — a responsive website plus a phone app tuned for dual-screen (Duo) phones. Data is stored offline-first on the device and can optionally sync between family members through Supabase.
+Everything for a long-distance move in one place — a responsive website plus a phone app . Data is stored offline-first on the device and can optionally sync between family members through Supabase.
 
 ## What's inside
 
