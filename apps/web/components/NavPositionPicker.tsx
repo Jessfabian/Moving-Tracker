@@ -10,6 +10,7 @@ const OPTIONS: { value: NavPosition; label: string }[] = [
 
 export function NavPositionPicker({ dark = false }: { dark?: boolean }) {
   const pos = useNavPosition();
+  const built = process.env.NEXT_PUBLIC_BUILD_TIME ? new Date(process.env.NEXT_PUBLIC_BUILD_TIME).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
   return (
     <div role="radiogroup" aria-label="Navigation bar position" className="space-y-1.5">
       {dark && <div className="text-[11px] font-semibold tracking-wider text-white/50 uppercase">Navigation bar</div>}
@@ -25,6 +26,10 @@ export function NavPositionPicker({ dark = false }: { dark?: boolean }) {
             {o.label}
           </button>
         ))}
+      </div>
+      <div className={`text-[10px] ${dark ? "text-white/35" : "text-gray-400"}`} suppressHydrationWarning>
+        Version {process.env.NEXT_PUBLIC_BUILD_ID}
+        {built ? ` · updated ${built}` : ""}
       </div>
     </div>
   );
