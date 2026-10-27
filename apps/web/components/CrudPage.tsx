@@ -1,7 +1,7 @@
 "use client";
 
 import { SCHEMAS, displayValue, makeLookup, optionLabel, type TableMap, type TableName } from "@moving/shared";
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTwoPane } from "@/lib/hooks";
 import { useDb } from "@/lib/store-context";
 import { EntityForm } from "./EntityForm";
@@ -87,6 +87,15 @@ export function CrudPage<T extends TableName>(props: CrudPageProps<T>) {
 
   const current = editing && editing !== "new" ? (all.find((r) => r.id === editing) ?? null) : null;
   const formOpen = editing === "new" || !!current;
+  // New records always open in a sheet so it's obvious something opened; the side pane is for viewing/editing existing rows.
+  const paneOpen = twoPane && !!current;
+  const sheetOpen = formOpen && !paneOpen;
+  const paneRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!paneOpen || !paneRef.current) return;
+    const r = paneRef.current.getBoundingClientRect();
+    if (r.top > window.innerHeight * 0.6 || r.bottom < 80) paneRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [paneOpen, editing]);
   const drawerTitle = formTitle ? formTitle(current, addInitial) : current ? String((current as unknown as Row)[schema.titleField] || schema.singular) : `New ${schema.singular.toLowerCase()}`;
   const close = () => {
     setEditing(null);
@@ -221,8 +230,8 @@ export function CrudPage<T extends TableName>(props: CrudPageProps<T>) {
         <div className="grid grid-cols-2 gap-7">
           <div className="min-w-0">{list}</div>
           <div className="min-w-0">
-            <div className="card sticky top-4 max-h-[calc(100vh-2rem)] overflow-y-auto">
-              {formOpen ? (
+            <div ref={paneRef} className="card sticky top-4 max-h-[calc(100vh-2rem)] scroll-mt-4 overflow-y-auto">
+              {paneOpen ? (
                 <>
                   <div className="mb-4 flex items-center justify-between">
                     <h2 className="text-lg font-bold">{drawerTitle}</h2>
@@ -239,13 +248,11 @@ export function CrudPage<T extends TableName>(props: CrudPageProps<T>) {
           </div>
         </div>
       ) : (
-        <>
-          {list}
-          <Drawer open={formOpen} onClose={close} title={drawerTitle}>
-            {form}
-          </Drawer>
-        </>
+        list
       )}
+      <Drawer open={sheetOpen} onClose={close} title={drawerTitle}>
+        {sheetOpen && form}
+      </Drawer>
     </div>
   );
 }
