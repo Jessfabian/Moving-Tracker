@@ -2,7 +2,7 @@
 
 import type { IScannerControls } from "@zxing/browser";
 import { useEffect, useRef, useState } from "react";
-import { primeScanFeedback, scanFeedback, setSoundEnabled, soundEnabled } from "./scanFeedback";
+import { canVibrate, primeScanFeedback, releaseScanFeedback, scanFeedback, setSoundEnabled, soundEnabled } from "./scanFeedback";
 import { Modal } from "./ui";
 
 /**
@@ -93,6 +93,8 @@ export function Scanner({
     return () => {
       stopped = true;
       controls?.stop();
+      // Let the last beep finish before handing the audio session back.
+      setTimeout(releaseScanFeedback, 600);
     };
   }, [open, continuous]);
 
@@ -121,13 +123,21 @@ export function Scanner({
           onClick={() => {
             setSoundEnabled(!sound);
             setSound(!sound);
-            primeScanFeedback();
+            if (sound) releaseScanFeedback();
+            else primeScanFeedback();
           }}
         >
           {sound ? "🔊 Beep on" : "🔇 Beep off"}
         </button>
       </div>
       {last && continuous && <p className="mt-2 text-sm font-medium text-green-700">✓ Scanned {last} — keep going!</p>}
+      {open && !canVibrate() && (
+        <p className="mt-2 text-[12px] leading-snug text-gray-500">
+          {sound
+            ? "iPhone doesn't let websites vibrate on their own — listen for the beep-beep (it plays even on silent) and watch for the green ✓."
+            : "iPhone doesn't let websites vibrate on their own — watch for the green ✓, or turn the beep on."}
+        </p>
+      )}
       {error && (
         <p className="mt-2 rounded-lg bg-amber-50 p-2 text-sm text-amber-800">
           Camera not available ({error}). Camera access needs HTTPS or localhost and permission. You can type the code instead.
