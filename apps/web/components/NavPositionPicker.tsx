@@ -27,7 +27,7 @@ export function NavPositionPicker({ dark = false }: { dark?: boolean }) {
           </button>
         ))}
       </div>
-      <div className={`text-[10px] ${dark ? "text-white/35" : "text-gray-400"}`} suppressHydrationWarning>
+      <div className={`text-[11px] ${dark ? "text-white/35" : "text-gray-400"}`} suppressHydrationWarning>
         Version {process.env.NEXT_PUBLIC_BUILD_ID}
         {built ? ` · updated ${built}` : ""}
       </div>

@@ -56,7 +56,7 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
     <nav className="space-y-6">
       {NAV_GROUPS.map((g) => (
         <div key={g.title}>
-          <div className="mb-2 px-3 text-[10px] font-semibold tracking-[0.18em] text-white/35 uppercase">{g.title}</div>
+          <div className="mb-2 px-3 text-[11px] font-semibold tracking-[0.18em] text-white/35 uppercase">{g.title}</div>
           <div className="space-y-0.5">
             {g.items.filter((i) => i.href !== "/travel" || showTrip || path.startsWith("/travel")).map((i) => {
               const active = i.href === "/" ? path === "/" : path.startsWith(i.href);
@@ -97,7 +97,7 @@ function Countdown() {
   if (!move) return null;
   return (
     <Link href="/move" className="dot-grid relative block flex-none overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04] p-4">
-      <div className="text-[10px] font-semibold tracking-[0.18em] text-white/45 uppercase">{move.title}</div>
+      <div className="text-[11px] font-semibold tracking-[0.18em] text-white/45 uppercase">{move.title}</div>
       <div className="mt-2 flex items-baseline gap-1.5">
         <span className="font-display text-5xl leading-none font-extrabold tracking-[-0.06em] text-lime">{d === null ? "—" : d > 0 ? d : d === 0 ? "0" : "✓"}</span>
         <span className="text-sm text-white/70">{d === null ? "set a date" : d > 0 ? (d === 1 ? "day to go" : "days to go") : d === 0 ? "moving day" : "moved"}</span>
@@ -155,14 +155,14 @@ export function AppShell({ children }: { children: ReactNode }) {
               <Link
                 key={t.href}
                 href={t.href}
-                className={`flex flex-col items-center rounded-full py-1.5 text-[10.5px] font-semibold transition ${active ? "bg-lime text-ink" : "text-white/60"}`}
+                className={`flex flex-col items-center rounded-full py-1.5 text-[11px] font-semibold transition ${active ? "bg-lime text-ink" : "text-white/60"}`}
               >
                 <span className="text-lg leading-6">{t.icon}</span>
                 {t.label}
               </Link>
             );
           })}
-          <button onClick={() => setMenu(true)} className="flex flex-col items-center rounded-full py-1.5 text-[10.5px] font-semibold text-white/60">
+          <button onClick={() => setMenu(true)} className="flex flex-col items-center rounded-full py-1.5 text-[11px] font-semibold text-white/60">
             <span className="text-lg leading-6">☰</span>
             More
           </button>
