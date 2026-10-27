@@ -1,6 +1,6 @@
 "use client";
 
-import { BOOK_GENRES, DISPOSITION_COLORS, DISPOSITIONS, formatMoney, guessGenre, lookupBook, normalizeIsbn, optionLabel, sum, type Book } from "@moving/shared";
+import { BOOK_GENRES, DISPOSITION_COLORS, DISPOSITIONS, estimateMoveSize, formatMoney, guessGenre, lookupBook, normalizeIsbn, optionLabel, sum, type Book } from "@moving/shared";
 import { useMemo, useState } from "react";
 import { PriceHint, SalesLog, SellDrawer, bookAskPrice } from "@/components/BookSelling";
 import { EntityForm } from "@/components/EntityForm";
@@ -24,17 +24,23 @@ function Cover({ book, className = "h-28 w-20" }: { book: Book; className?: stri
 function DispButtons({ book }: { book: Book }) {
   const store = useStore();
   return (
-    <div className="flex gap-1">
-      {QUICK.map((d) => (
-        <button
-          key={d}
-          onClick={() => store.update("books", book.id, { disposition: d })}
-          className="flex-1 rounded-md border px-1.5 py-1 text-[11px] font-semibold"
-          style={book.disposition === d ? { background: DISPOSITION_COLORS[d], color: "white", borderColor: DISPOSITION_COLORS[d] } : { color: DISPOSITION_COLORS[d], borderColor: `${DISPOSITION_COLORS[d]}55` }}
-        >
-          {QUICK_LABEL[d]}
-        </button>
-      ))}
+    <div className="grid grid-cols-4 gap-0.5 rounded-full bg-ink/[0.06] p-0.5" role="radiogroup" aria-label="Plan for this book">
+      {QUICK.map((d) => {
+        const on = book.disposition === d;
+        return (
+          <button
+            type="button"
+            key={d}
+            role="radio"
+            aria-checked={on}
+            onClick={() => store.update("books", book.id, { disposition: d })}
+            className={`seg-btn min-h-9 min-w-0 truncate rounded-full px-1 text-[13px] font-semibold transition ${on ? "text-white shadow-sm" : "text-gray-600"}`}
+            style={on ? { background: DISPOSITION_COLORS[d] } : undefined}
+          >
+            {QUICK_LABEL[d]}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -104,6 +110,7 @@ export default function BooksPage() {
   }, [books, group, db.family_members]);
 
   const sellValue = sum(db.books.filter((b) => b.disposition === "sell").map((b) => b.sale_price ?? b.est_value));
+  const moveSize = estimateMoveSize(db);
   const current = editing && editing !== "new" ? (db.books.find((b) => b.id === editing.id) ?? null) : null;
 
   return (
@@ -111,7 +118,7 @@ export default function BooksPage() {
       <PageHeader
         title="Books"
         icon="📚"
-        subtitle={`${db.books.length} books · ${db.books.filter((b) => b.disposition === "sell").length} to sell (${formatMoney(sellValue)}) · ${db.books.filter((b) => b.disposition === "donate").length} to donate · ${db.books.filter((b) => b.disposition === "move").length} keeping`}
+        subtitle={`${db.books.length} books · ${db.books.filter((b) => b.disposition === "sell").length} to sell (${formatMoney(sellValue)}) · ${db.books.filter((b) => b.disposition === "donate").length} to donate · ${db.books.filter((b) => b.disposition === "move").length} keeping${moveSize.bookLbs ? ` · ≈ ${moveSize.bookLbs.toLocaleString()} lbs to move (in your mover quote)` : ""}`}
         actions={
           <>
             <button
@@ -149,11 +156,11 @@ export default function BooksPage() {
         <SalesLog />
       ) : (
       <>
-      <div className="card mb-5 grid gap-3 bg-indigo-50/50 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="sm:col-span-2 lg:col-span-4 text-sm font-semibold text-indigo-900">Scanning defaults — applied to every new book you scan:</div>
-        <label className="text-xs">
+      <div className="card mb-5 grid grid-cols-1 gap-x-6 gap-y-1 bg-indigo-50/50 lg:grid-cols-2">
+        <div className="mb-1 text-sm font-semibold text-indigo-900 lg:col-span-2">Scanning defaults — applied to every new book you scan:</div>
+        <label className="flex min-h-11 min-w-0 items-center justify-between gap-3 text-[15px]">
           Plan
-          <select className="input mt-1" value={defaults.disposition} onChange={(e) => setDefaults({ ...defaults, disposition: e.target.value as Book["disposition"] })}>
+          <select className="ios-popup min-h-9 min-w-0 max-w-[60%] truncate bg-white/80" value={defaults.disposition} onChange={(e) => setDefaults({ ...defaults, disposition: e.target.value as Book["disposition"] })}>
             {DISPOSITIONS.map((d) => (
               <option key={d.value} value={d.value}>
                 {d.label}
@@ -161,9 +168,9 @@ export default function BooksPage() {
             ))}
           </select>
         </label>
-        <label className="text-xs">
+        <label className="flex min-h-11 min-w-0 items-center justify-between gap-3 text-[15px]">
           Belongs to
-          <select className="input mt-1" value={defaults.owner_member_id ?? ""} onChange={(e) => setDefaults({ ...defaults, owner_member_id: e.target.value || null })}>
+          <select className="ios-popup min-h-9 min-w-0 max-w-[60%] truncate bg-white/80" value={defaults.owner_member_id ?? ""} onChange={(e) => setDefaults({ ...defaults, owner_member_id: e.target.value || null })}>
             <option value="">Shared</option>
             {db.family_members.map((m) => (
               <option key={m.id} value={m.id}>
@@ -172,9 +179,9 @@ export default function BooksPage() {
             ))}
           </select>
         </label>
-        <label className="text-xs">
+        <label className="flex min-h-11 min-w-0 items-center justify-between gap-3 text-[15px]">
           Room
-          <select className="input mt-1" value={defaults.room_id ?? ""} onChange={(e) => setDefaults({ ...defaults, room_id: e.target.value || null })}>
+          <select className="ios-popup min-h-9 min-w-0 max-w-[60%] truncate bg-white/80" value={defaults.room_id ?? ""} onChange={(e) => setDefaults({ ...defaults, room_id: e.target.value || null })}>
             <option value="">—</option>
             {db.rooms.map((r) => (
               <option key={r.id} value={r.id}>
@@ -183,9 +190,9 @@ export default function BooksPage() {
             ))}
           </select>
         </label>
-        <label className="text-xs">
+        <label className="flex min-h-11 min-w-0 items-center justify-between gap-3 text-[15px]">
           Packing into box
-          <select className="input mt-1" value={defaults.box_id ?? ""} onChange={(e) => setDefaults({ ...defaults, box_id: e.target.value || null })}>
+          <select className="ios-popup min-h-9 min-w-0 max-w-[60%] truncate bg-white/80" value={defaults.box_id ?? ""} onChange={(e) => setDefaults({ ...defaults, box_id: e.target.value || null })}>
             <option value="">—</option>
             {[...db.boxes]
               .sort((a, b) => a.number - b.number)
@@ -206,21 +213,19 @@ export default function BooksPage() {
               Clear
             </button>
           </div>
-          <ul className="space-y-2">
+          <ul className="space-y-3">
             {log.slice(0, 8).map((e, i) => {
               const b = e.id ? db.books.find((x) => x.id === e.id) : null;
               return (
-                <li key={`${e.code}-${i}`} className="flex items-center gap-3">
-                  {b ? <Cover book={b} className="h-14 w-10" /> : <span className="w-10 text-center">{e.ok ? "⏳" : "⚠️"}</span>}
-                  <button className="min-w-0 flex-1 text-left" onClick={() => b && setEditing(b)}>
-                    <div className="truncate text-sm font-semibold">{e.msg}</div>
-                    <div className="text-xs text-gray-500">{b ? b.authors.join(", ") || e.code : e.code}</div>
-                  </button>
-                  {b && (
-                    <div className="w-56">
-                      <DispButtons book={b} />
-                    </div>
-                  )}
+                <li key={`${e.code}-${i}`} className="space-y-2">
+                  <div className="flex items-center gap-3">
+                    {b ? <Cover book={b} className="h-14 w-10" /> : <span className="w-10 flex-none text-center">{e.ok ? "⏳" : "⚠️"}</span>}
+                    <button type="button" className="min-w-0 flex-1 text-left" onClick={() => b && setEditing(b)}>
+                      <div className="truncate text-[15px] font-semibold">{e.msg}</div>
+                      <div className="truncate text-[13px] text-gray-500">{b ? b.authors.join(", ") || e.code : e.code}</div>
+                    </button>
+                  </div>
+                  {b && <DispButtons book={b} />}
                 </li>
               );
             })}
@@ -228,42 +233,60 @@ export default function BooksPage() {
         </section>
       )}
 
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <input className="input max-w-xs flex-1" placeholder="Search title, author, ISBN…" value={q} onChange={(e) => setQ(e.target.value)} />
-        <select className="input w-auto" value={disp} onChange={(e) => setDisp(e.target.value)}>
-          <option value="">Any plan</option>
-          {DISPOSITIONS.map((d) => (
-            <option key={d.value} value={d.value}>
-              {d.label}
-            </option>
-          ))}
-        </select>
-        <select className="input w-auto" value={genre} onChange={(e) => setGenre(e.target.value)}>
-          <option value="">Any genre</option>
-          {BOOK_GENRES.map((d) => (
-            <option key={d.value} value={d.value}>
-              {d.label}
-            </option>
-          ))}
-        </select>
-        <select className="input w-auto" value={owner} onChange={(e) => setOwner(e.target.value)}>
-          <option value="">Anyone</option>
-          {db.family_members.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.name}
-            </option>
-          ))}
-        </select>
-        <Segmented
-          value={group}
-          onChange={setGroup}
-          options={[
-            { value: "genre", label: "Genre" },
-            { value: "disposition", label: "Plan" },
-            { value: "owner", label: "Owner" },
-            { value: "none", label: "A–Z" },
-          ]}
-        />
+      <div className="@container mb-4 space-y-2">
+        <div className="grid grid-cols-1 items-center gap-2 @lg:grid-cols-[minmax(0,1fr)_auto_auto_auto]">
+          <input className="input w-full min-w-0" type="search" placeholder="Search title, author, ISBN…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <div className="grid min-w-0 grid-cols-3 gap-2 @lg:contents">
+            <select className="ios-popup min-h-9 w-full min-w-0 truncate bg-ink/[0.06] @lg:w-auto" aria-label="Plan" value={disp} onChange={(e) => setDisp(e.target.value)}>
+              <option value="">Plan</option>
+              {DISPOSITIONS.map((d) => (
+                <option key={d.value} value={d.value}>
+                  {d.label}
+                </option>
+              ))}
+            </select>
+            <select className="ios-popup min-h-9 w-full min-w-0 truncate bg-ink/[0.06] @lg:w-auto" aria-label="Genre" value={genre} onChange={(e) => setGenre(e.target.value)}>
+              <option value="">Genre</option>
+              {BOOK_GENRES.map((d) => (
+                <option key={d.value} value={d.value}>
+                  {d.label}
+                </option>
+              ))}
+            </select>
+            <select className="ios-popup min-h-9 w-full min-w-0 truncate bg-ink/[0.06] @lg:w-auto" aria-label="Belongs to" value={owner} onChange={(e) => setOwner(e.target.value)}>
+              <option value="">Owner</option>
+              {db.family_members.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="hidden text-[13px] text-gray-500 @sm:inline">Group by</span>
+          <div className="grid flex-1 grid-cols-4 gap-0.5 rounded-full bg-ink/[0.06] p-0.5" role="radiogroup" aria-label="Group by">
+            {(
+              [
+                { value: "genre", label: "Genre" },
+                { value: "disposition", label: "Plan" },
+                { value: "owner", label: "Owner" },
+                { value: "none", label: "A–Z" },
+              ] as { value: GroupKey; label: string }[]
+            ).map((o) => (
+              <button
+                type="button"
+                key={o.value}
+                role="radio"
+                aria-checked={group === o.value}
+                onClick={() => setGroup(o.value)}
+                className={`seg-btn min-h-9 min-w-0 truncate rounded-full px-1 text-[13px] font-semibold transition ${group === o.value ? "bg-white text-ink shadow-sm" : "text-gray-600"}`}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {books.length ? (
@@ -280,9 +303,10 @@ export default function BooksPage() {
                   const on = picked.includes(b.id);
                   const sold = b.sale_status === "sold" || b.sale_status === "pending";
                   return (
-                  <div key={b.id} className={`card relative flex gap-3 p-3 ${selecting && on ? "ring-2 ring-ink" : ""}`}>
+                  <div key={b.id} className={`card relative flex flex-col gap-3 p-3 ${selecting && on ? "ring-2 ring-ink" : ""}`}>
                     {selecting && (
                       <button
+                        type="button"
                         aria-label={on ? "Unselect" : "Select"}
                         disabled={sold}
                         onClick={() => togglePick(b.id)}
@@ -291,26 +315,26 @@ export default function BooksPage() {
                         {on ? "✓" : ""}
                       </button>
                     )}
-                    <button onClick={() => (selecting && !sold ? togglePick(b.id) : setEditing(b))}>
-                      <Cover book={b} />
+                    <div className="flex min-w-0 gap-3">
+                    <button type="button" className="flex-none" onClick={() => (selecting && !sold ? togglePick(b.id) : setEditing(b))}>
+                      <Cover book={b} className="h-24 w-16" />
                     </button>
                     <div className="flex min-w-0 flex-1 flex-col">
-                      <button className="pr-6 text-left" onClick={() => (selecting && !sold ? togglePick(b.id) : setEditing(b))}>
-                        <div className="line-clamp-2 font-semibold leading-tight">{b.title}</div>
-                        <div className="truncate text-xs text-gray-500">{b.authors.join(", ")}</div>
-                        <div className="mt-1 text-[11px] text-gray-400">
+                      <button type="button" className="pr-6 text-left" onClick={() => (selecting && !sold ? togglePick(b.id) : setEditing(b))}>
+                        <div className="line-clamp-2 text-[15px] font-semibold leading-tight">{b.title}</div>
+                        <div className="truncate text-[13px] text-gray-500">{b.authors.join(", ")}</div>
+                        <div className="mt-1 line-clamp-2 text-[12px] text-gray-400">
                           {[optionLabel(BOOK_GENRES, b.genre), b.published, b.est_value ? formatMoney(b.est_value) : null].filter(Boolean).join(" · ")}
                         </div>
                       </button>
                       {sold ? (
-                        <div className="mt-1 text-[11px] font-semibold text-emerald-700">{b.sale_status === "sold" ? "✓ Sold" : "⏳ Sale pending"}</div>
+                        <div className="mt-1 text-[12px] font-semibold text-emerald-700">{b.sale_status === "sold" ? "✓ Sold" : "⏳ Sale pending"}</div>
                       ) : (
                         b.disposition === "sell" && <PriceHint book={b} />
                       )}
-                      <div className="mt-auto pt-2">
-                        <DispButtons book={b} />
-                      </div>
                     </div>
+                    </div>
+                    <DispButtons book={b} />
                   </div>
                   );
                 })}

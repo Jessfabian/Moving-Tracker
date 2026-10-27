@@ -25,3 +25,4 @@ export * from './instantQuote';
 export * from './schools';
 export * from './itemPricing';
 export * from './roomScan';
+export * from './supplies';

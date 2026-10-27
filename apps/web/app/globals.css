@@ -283,7 +283,7 @@ input[type="checkbox"] {
   main :is(button.chip, a.chip, button.rounded-full, [role="switch"]):not([class*="absolute"]):not([class*="fixed"]) {
     position: relative;
   }
-  main :is(button.chip, a.chip, button.rounded-full, [role="switch"]):not([class*="absolute"]):not([class*="fixed"])::after {
+  main :is(button.chip, a.chip, button.rounded-full, [role="switch"]):not([class*="absolute"]):not([class*="fixed"]):not(.seg-btn)::after {
     content: "";
     position: absolute;
     inset: -10px -4px;
@@ -535,3 +535,18 @@ main > * {
 .leaflet-container { font-family: var(--font-inter), system-ui, sans-serif; }
 .leaflet-control-zoom a { border-radius: 12px !important; }
 .mt-tiles { filter: grayscale(0.55) sepia(0.12) contrast(0.95) brightness(1.03); }
+
+/* Scanner success flash: pops in, then fades so the camera is visible for the next code. */
+.scan-flash {
+  animation: scan-flash 1.4s ease-out forwards;
+}
+@keyframes scan-flash {
+  0% { opacity: 0; transform: scale(1.04); }
+  10% { opacity: 1; transform: scale(1); }
+  65% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .scan-flash { animation-name: none; }
+}
+

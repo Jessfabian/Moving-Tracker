@@ -205,7 +205,7 @@ export function PageHeader({ title, icon, subtitle, actions, eyebrow }: { title:
           {words.length ? `${words.join(" ")} ` : ""}
           <span className="highlight">{last}</span>
         </h1>
-        {subtitle && <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-gray-600 short:mt-1 short:line-clamp-1 short:text-sm">{subtitle}</p>}
+        {subtitle && <p className="mt-3 max-w-2xl text-[15px] leading-relaxed text-gray-600 short:mt-1 short:text-sm">{subtitle}</p>}
       </div>
       {actions && <HeaderActions actions={actions} />}
     </div>

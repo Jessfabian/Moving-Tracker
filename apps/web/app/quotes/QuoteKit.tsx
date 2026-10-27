@@ -13,6 +13,8 @@ import {
 } from "@moving/shared";
 import { useState, useSyncExternalStore } from "react";
 import { printHtml } from "@/lib/media";
+import Link from "next/link";
+import { useSupplies } from "@/components/PackingSupplies";
 import { InstantQuoteCard } from "./InstantQuote";
 import { useDb, useStore } from "@/lib/store-context";
 
@@ -102,6 +104,7 @@ function packetHtml(db: Db, size: MoveSize, estimates: MethodEstimate[], request
 <div><b>Estimated weight:</b> ${size.weightLbs.toLocaleString()} lbs (${size.basis === "inventory" ? "from inventory" : "typical for home size"})</div>
 <div><b>Volume:</b> ${size.cubicFeet.toLocaleString()} cu ft · ${esc(size.truck)}</div>
 <div><b>Items / boxes / books:</b> ${size.itemsToMove} / ${size.boxes} / ${size.booksToMove}</div>
+${size.bookLbs ? `<div><b>Books:</b> ≈ ${size.bookLbs.toLocaleString()} lbs (included in weight)${size.bookBoxesNeeded ? ` · ${size.bookBoxesNeeded} small boxes` : ""}</div>` : ""}
 <div><b>Fragile items:</b> ${size.fragileItems}</div>
 </div>
 ${size.specialItems.length ? `<p><b>Bulky / special items:</b> ${esc(size.specialItems.join(", "))}</p>` : ""}
@@ -136,6 +139,7 @@ export function QuoteKit({ onCompare }: { onCompare: () => void }) {
   const store = useStore();
   const move = db.moves[0];
   const { size, miles, estimates } = moveEstimates(db);
+  const supplies = useSupplies();
   const contact = contactFor(db);
   const request = quoteRequestText(move, size, contact);
   const [copied, setCopied] = useState(false);
@@ -176,7 +180,7 @@ export function QuoteKit({ onCompare }: { onCompare: () => void }) {
               ["Home", size.homeLabel],
               ["Items", size.itemsToMove.toLocaleString()],
               ["Boxes", size.boxes.toLocaleString()],
-              ["Books", size.booksToMove.toLocaleString()],
+              ["Books", size.bookLbs ? `${size.booksToMove.toLocaleString()} · ${size.bookLbs.toLocaleString()} lbs` : size.booksToMove.toLocaleString()],
             ].map(([k, v]) => (
               <div key={k} className="rounded-xl bg-white/10 p-2.5">
                 <div className="text-[11px] uppercase tracking-wide text-white/50">{k}</div>
@@ -185,10 +189,26 @@ export function QuoteKit({ onCompare }: { onCompare: () => void }) {
             ))}
           </div>
           <p className="mt-4 text-xs leading-relaxed text-white/60">
-            Inventory adds up to <b className="text-white">{size.inventoryLbs.toLocaleString()} lbs</b>; a typical {size.homeLabel.toLowerCase()} home is about{" "}
+            Inventory adds up to <b className="text-white">{(size.inventoryLbs - size.bookLbs).toLocaleString()} lbs</b>; a typical {size.homeLabel.toLowerCase()} home is about{" "}
             <b className="text-white">{size.typicalLbs.toLocaleString()} lbs</b>. Using the {size.basis === "inventory" ? "inventory" : "typical"} figure
             {size.basis === "typical" ? " — inventories are rarely complete, so keep logging items for a sharper number." : "."}
+            {size.bookLbs > 0 && (
+              <>
+                {" "}
+                Plus <b className="text-white">{size.bookLbs.toLocaleString()} lbs of books</b> ({size.booksToMove.toLocaleString()} to move
+                {size.bookBoxesNeeded ? `, about ${size.bookBoxesNeeded} small boxes` : ""}) — books are dense, so they&apos;re added on top.
+              </>
+            )}
           </p>
+          {supplies.totalBoxes > 0 && (
+            <Link href="/boxes" className="mt-3 flex min-h-11 items-center gap-2 rounded-xl bg-white/10 px-3 py-2 text-[13px] text-white/90">
+              <span className="text-lg">🧰</span>
+              <span className="min-w-0 flex-1">
+                Packing yourself? You&apos;ll need about <b className="text-white">{supplies.totalBoxes} boxes</b> plus tape &amp; paper — ~{formatMoney(supplies.totalCost)}
+              </span>
+              <span className="flex-none text-white/50">›</span>
+            </Link>
+          )}
           {(size.specialItems.length > 0 || size.fragileItems > 0 || size.highValueItems.length > 0) && (
             <div className="mt-4 flex flex-wrap gap-1.5">
               {size.specialItems.map((s, i) => (

@@ -1,9 +1,10 @@
 "use client";
 
-import { BOX_STATUSES, buildLabelSheet, buildReport, nextBoxNumber, optionLabel, parseBoxQr, qrSvg, boxQrValue, type Box } from "@moving/shared";
+import { BOX_SIZES, BOX_STATUSES, buildLabelSheet, buildReport, formatMoney, nextBoxNumber, optionLabel, parseBoxQr, qrSvg, boxQrValue, type Box } from "@moving/shared";
 import { useEffect, useMemo, useState } from "react";
 import { EntityForm } from "@/components/EntityForm";
 import { MediaThumb } from "@/components/Media";
+import { PackingSupplies, useSupplies } from "@/components/PackingSupplies";
 import { Scanner } from "@/components/Scanner";
 import { Drawer, Empty, PageHeader, Progress } from "@/components/ui";
 import { useTwoPane } from "@/lib/hooks";
@@ -127,6 +128,12 @@ export default function BoxesPage() {
   const [scan, setScan] = useState(false);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [msg, setMsg] = useState<string | null>(null);
+  const [showSupplies, setShowSupplies] = useState(false);
+  const supplies = useSupplies();
+  const sizeSummary = BOX_SIZES.filter((s) => supplies.boxes[s.key] > 0)
+    .slice(0, 3)
+    .map((s) => `${supplies.boxes[s.key]} ${s.name.toLowerCase()}`)
+    .join(", ");
 
   const boxes = useMemo(
     () => [...db.boxes].filter((b) => (!status || b.status === status) && (!roomId || b.room_id === roomId)).sort((a, b) => a.number - b.number),
@@ -228,6 +235,18 @@ export default function BoxesPage() {
         }
       />
       {msg && <p className="mb-3 rounded-lg bg-amber-50 p-2 text-sm text-amber-800">{msg}</p>}
+      {supplies.totalBoxes > 0 && (
+        <button type="button" onClick={() => setShowSupplies(true)} className="card mb-4 flex w-full items-center gap-3 text-left">
+          <span className="flex h-11 w-11 flex-none items-center justify-center rounded-2xl bg-amber-100 text-2xl">🧰</span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[15px] font-semibold">Packing supplies</span>
+            <span className="block text-[13px] text-gray-500">
+              About {supplies.totalBoxes} more boxes ({sizeSummary}) + tape, paper &amp; wrap · ~{formatMoney(supplies.totalCost)}
+            </span>
+          </span>
+          <span className="flex-none text-xl text-gray-300">›</span>
+        </button>
+      )}
       {db.boxes.length > 0 && (
         <div className="card mb-4">
           <Progress value={(delivered / db.boxes.length) * 100} color="bg-cyan-600" />
@@ -277,6 +296,9 @@ export default function BoxesPage() {
             }}
           />
         )}
+      </Drawer>
+      <Drawer open={showSupplies} onClose={() => setShowSupplies(false)} title="Packing supplies">
+        {showSupplies && <PackingSupplies />}
       </Drawer>
       <Scanner open={scan} onClose={() => setScan(false)} onScan={onScan} title="Scan a box label" hint="Point the camera at the QR code on the box label, or type the box number." />
     </div>

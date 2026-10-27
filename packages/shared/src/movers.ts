@@ -1,4 +1,5 @@
 import type { Snapshot } from './csv';
+import { estimateBookWeightOz } from './bookselling';
 import type { Move, MoverQuote } from './types';
 
 /** Typical weight per item (lbs) by inventory category — used when an item isn't packed in a box. */
@@ -27,6 +28,11 @@ export const CATEGORY_WEIGHT_LBS: Record<string, number> = {
 export const DEFAULT_BOX_LBS = 40;
 /** Industry rule of thumb: household goods average ~7 lbs per cubic foot. */
 export const LBS_PER_CUFT = 7;
+/** Books should go in small 1.5 cu ft boxes and stay under ~35 lbs so a box can be lifted safely. */
+export const BOOK_BOX_MAX_LBS = 35;
+const BOOK_BOX_TARE_LBS = 1;
+/** A full small box of books (~35 lbs in 1.5 cu ft) packs far denser than average household goods. */
+const BOOK_LBS_PER_CUFT = 23;
 
 const SPECIAL_ITEM = /piano|safe\b|pool table|hot tub|treadmill|elliptical|peloton|grandfather clock|gun safe|aquarium|fish tank|motorcycle|golf cart|chandelier|armoire|sleeper sofa|sectional/i;
 const HOME_SIZE_LBS: [number, string, number][] = [
@@ -45,7 +51,11 @@ export interface MoveSize {
   itemsToMove: number;
   boxes: number;
   booksToMove: number;
-  /** Weight from what's logged in the inventory. */
+  /** Weight of the books being moved, packed (included in weightLbs on top of the household figure). */
+  bookLbs: number;
+  /** Small (1.5 cu ft) boxes still needed for books that aren't packed yet. */
+  bookBoxesNeeded: number;
+  /** Weight from what's logged in the inventory (books included). */
   inventoryLbs: number;
   /** Rule-of-thumb weight for this many bedrooms. */
   typicalLbs: number;
@@ -78,12 +88,27 @@ export function estimateMoveSize(db: Pick<Snapshot, 'rooms' | 'items' | 'boxes' 
     byRoom.set(key, r);
   };
 
+  const bookLbsOf = (b: (typeof books)[number]) => estimateBookWeightOz(b) / 16;
+  const bookLbsByBox = new Map<string, number>();
+  for (const b of books) if (b.box_id) bookLbsByBox.set(b.box_id, (bookLbsByBox.get(b.box_id) ?? 0) + bookLbsOf(b));
+
   let lbs = 0;
+  let bookLbs = 0;
   for (const b of boxes) {
-    const w = b.weight_lbs ?? DEFAULT_BOX_LBS;
+    const inside = bookLbsByBox.get(b.id);
+    // A weighed box is trusted as-is; an unweighed box of books weighs what its books do (plus cardboard).
+    const w = b.weight_lbs ?? (inside ? inside + BOOK_BOX_TARE_LBS : DEFAULT_BOX_LBS);
+    if (inside) bookLbs += b.weight_lbs ? Math.min(inside, b.weight_lbs) : w;
     lbs += w;
     bump(b.room_id, 'boxes', 1, w);
   }
+  const boxIds = new Set(boxes.map((b) => b.id));
+  const loose = books.filter((b) => !b.box_id || !boxIds.has(b.box_id));
+  const looseLbs = loose.reduce((a, b) => a + bookLbsOf(b), 0);
+  const bookBoxesNeeded = looseLbs > 0 ? Math.ceil(looseLbs / BOOK_BOX_MAX_LBS) : 0;
+  for (const b of loose) bump(b.room_id, 'items', 0, bookLbsOf(b));
+  lbs += looseLbs + bookBoxesNeeded * BOOK_BOX_TARE_LBS;
+  bookLbs += looseLbs + bookBoxesNeeded * BOOK_BOX_TARE_LBS;
   let count = 0;
   for (const i of items) {
     const qty = Math.max(1, i.quantity ?? 1);
@@ -92,16 +117,15 @@ export function estimateMoveSize(db: Pick<Snapshot, 'rooms' | 'items' | 'boxes' 
     lbs += w;
     bump(i.room_id, 'items', qty, w);
   }
-  const looseBooks = books.filter((b) => !b.box_id).length;
-  lbs += looseBooks;
-
-  const bedrooms = rooms.filter((r) => /bed|nursery|kid|guest/i.test(r.name)).length;
+  const bedrooms = rooms.filter((r) => /bed|nursery|kid|guest|child|['’]s room/i.test(r.name) && !/bath|closet/i.test(r.name)).length;
   const sizeRow = HOME_SIZE_LBS[Math.min(bedrooms, 5)]!;
   const typicalLbs = rooms.length ? Math.max(sizeRow[2], bedrooms === 0 ? rooms.length * 700 : 0) : 0;
   const inventoryLbs = Math.round(lbs);
-  const basis = inventoryLbs >= typicalLbs ? 'inventory' : 'typical';
-  const weightLbs = Math.max(inventoryLbs, typicalLbs);
-  const cubicFeet = Math.round(weightLbs / LBS_PER_CUFT);
+  // Books are added on top of the household figure: a typical-home estimate doesn't account for a big library.
+  const otherLbs = Math.round(lbs - bookLbs);
+  const basis = otherLbs >= typicalLbs ? 'inventory' : 'typical';
+  const weightLbs = Math.round(Math.max(otherLbs, typicalLbs) + bookLbs);
+  const cubicFeet = Math.round(Math.max(otherLbs, typicalLbs) / LBS_PER_CUFT + bookLbs / BOOK_LBS_PER_CUFT);
   const truck = cubicFeet <= 380 ? '10-ft truck' : cubicFeet <= 760 ? '15-ft truck' : cubicFeet <= 1010 ? '20-ft truck' : cubicFeet <= 1680 ? '26-ft truck' : '26-ft truck + trailer, or full-service';
 
   return {
@@ -111,6 +135,8 @@ export function estimateMoveSize(db: Pick<Snapshot, 'rooms' | 'items' | 'boxes' 
     itemsToMove: count,
     boxes: boxes.length,
     booksToMove: books.length,
+    bookLbs: Math.round(bookLbs),
+    bookBoxesNeeded,
     inventoryLbs,
     typicalLbs,
     weightLbs,
@@ -293,6 +319,7 @@ export function quoteRequestText(move: Move | undefined, size: MoveSize, opts: {
     'SIZE (from our inventory)',
     `• About ${size.weightLbs.toLocaleString()} lbs / ${size.cubicFeet.toLocaleString()} cu ft`,
     `• ${size.itemsToMove} logged items${size.boxes ? `, ${size.boxes} boxes` : ''}${size.booksToMove ? `, ${size.booksToMove} books` : ''}`,
+    ...(size.bookLbs ? [`• Books: ${size.booksToMove.toLocaleString()} books ≈ ${size.bookLbs.toLocaleString()} lbs (included above)${size.bookBoxesNeeded ? ` — about ${size.bookBoxesNeeded} small book boxes` : ''}`] : []),
     ...(size.specialItems.length ? [`• Bulky / special items: ${size.specialItems.join(', ')}`] : []),
     ...(size.fragileItems ? [`• ${size.fragileItems} fragile items`] : []),
     ...(size.highValueItems.length ? [`• High-value items: ${size.highValueItems.slice(0, 6).map((h) => h.name).join(', ')}`] : []),
