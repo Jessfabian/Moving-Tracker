@@ -164,7 +164,7 @@ export function productToItemPatch(
   if (blank(current.model) && info.model) patch.model = info.model;
   if (blank(current.description) && info.description) patch.description = info.description;
   if (blank(current.image_url) && info.image) patch.image_url = info.image;
-  if (blank(current.category) && info.category) patch.category = info.category;
+  if (blank(current.category) && info.category && info.category !== 'other') patch.category = info.category;
   if (blank(current.retail_price) && info.price != null) patch.retail_price = info.price;
   if (blank(current.est_value) && info.resale != null) patch.est_value = info.resale;
   return patch;
@@ -269,7 +269,9 @@ export function parseProductHtml(html: string, pageUrl: string): ProductInfo {
   } catch {
     image = '';
   }
-  const description = (ldText(ld?.description) || metaTags(html, ['og:description', 'description']) || '').slice(0, 500);
+  const rawDescription = (ldText(ld?.description) || metaTags(html, ['og:description', 'description']) || '').slice(0, 500);
+  // Store SEO blurbs ("Online Shopping for…", "Shop X at Best Buy…") aren't a product description.
+  const description = /^(online shopping for|shop\b|read reviews and buy|buy\b|find low everyday prices|discover\b|browse\b)/i.test(rawDescription) ? '' : rawDescription;
   const category = name ? guessItemCategory(name) : 'other';
   return { barcode: gtin ?? '', name, brand, model, description, category, image, price, resale: resaleEstimate(price), source: hostLabel(pageUrl) };
 }
@@ -305,4 +307,91 @@ export function productFromUrl(raw: string): ProductInfo | null {
     .slice(0, 120);
   if (name.length < 4) return null;
   return { barcode: '', name, brand: '', model: '', description: '', category: guessItemCategory(name), image: '', price: null, resale: null, source: hostLabel(raw) };
+}
+
+/** Store bot-check / landing pages that parse to a useless "product". */
+export function isJunkProductName(name: string): boolean {
+  const n = name.trim();
+  return !n || /robot (check|or human)|captcha|access denied|are you a human|page not found|sorry|verify you are|just a moment/i.test(n) || /^(products?|home|shop|search)$/i.test(n);
+}
+
+/** Target product id (TCIN) from a target.com link: /p/…/-/A-12345678 or ?preselect=12345678. */
+export function targetTcin(url: string): string | null {
+  try {
+    const u = new URL(url);
+    if (!/(^|\.)target\.com$/i.test(u.hostname)) return null;
+    return u.searchParams.get('preselect')?.match(/^\d{6,10}$/)?.[0] ?? /\/A-(\d{6,10})/.exec(u.pathname)?.[1] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Target's own product feed (the public key their web pages use). */
+export const targetProductApi = (tcin: string) =>
+  `https://redsky.target.com/redsky_aggregations/v1/web/pdp_client_v1?key=9f36aeafbe60771e321a7cc95a78140772ab3e96&tcin=${tcin}&pricing_store_id=1771&has_pricing_store_id=true`;
+
+const dig = (o: unknown, ...path: string[]): unknown => path.reduce<unknown>((v, k) => (v && typeof v === 'object' ? (v as Record<string, unknown>)[k] : undefined), o);
+
+export function parseTargetProduct(json: unknown): ProductInfo | null {
+  const p = dig(json, 'data', 'product');
+  const item = dig(p, 'item');
+  const name = decodeHtml(String(dig(item, 'product_description', 'title') ?? ''));
+  if (!item || !name) return null;
+  const retail = toPrice(dig(p, 'price', 'reg_retail_max')) ?? toPrice(dig(p, 'price', 'current_retail')) ?? toPrice(dig(p, 'price', 'current_retail_min')) ?? toPrice(dig(p, 'price', 'formatted_current_price'));
+  const brand = decodeHtml(String(dig(item, 'primary_brand', 'name') ?? ''));
+  const rawBullets = dig(item, 'product_description', 'bullet_descriptions');
+  const bullets = Array.isArray(rawBullets) ? rawBullets.map(String) : [];
+  const modelLine = bullets.map((b) => b.replace(/<[^>]+>/g, '')).find((b) => /^model( number)?:/i.test(b));
+  const model = modelLine ? modelLine.replace(/^[^:]+:\s*/, '').trim() : modelFromName(name);
+  const description = decodeHtml(String(dig(item, 'product_description', 'downstream_description') ?? '').replace(/<[^>]+>/g, ' ')).slice(0, 500);
+  const barcode = String(dig(item, 'primary_barcode') ?? '');
+  return {
+    barcode: /^\d{8,14}$/.test(barcode) ? barcode : '',
+    name,
+    brand,
+    model,
+    description,
+    category: guessItemCategory(name),
+    image: String(dig(item, 'enrichment', 'image_info', 'primary_image', 'url') ?? ''),
+    price: retail,
+    resale: resaleEstimate(retail),
+    source: 'target.com',
+  };
+}
+
+const BRANDS = [
+  'Dyson', 'Shark', 'Bissell', 'Hoover', 'iRobot', 'Roomba', 'Eureka', 'Samsung', 'LG', 'Sony', 'Apple', 'Bose', 'JBL', 'Sonos', 'Vizio', 'TCL', 'Hisense', 'Panasonic',
+  'Philips', 'Dell', 'HP', 'Lenovo', 'Asus', 'Acer', 'Microsoft', 'Logitech', 'Canon', 'Nikon', 'GoPro', 'Nintendo', 'PlayStation', 'Xbox', 'Fitbit', 'Garmin', 'Amazon',
+  'Google', 'Nest', 'Ring', 'Roku', 'KitchenAid', 'Cuisinart', 'Ninja', 'Keurig', 'Nespresso', 'Breville', 'Vitamix', 'Instant Pot', 'Crock-Pot', 'Hamilton Beach',
+  'Oster', 'Black+Decker', 'Black & Decker', 'Le Creuset', 'Lodge', 'Pyrex', 'Calphalon', 'All-Clad', 'OXO', 'Rubbermaid', 'Whirlpool', 'GE', 'Frigidaire', 'Maytag',
+  'Bosch', 'Electrolux', 'Kenmore', 'DeWalt', 'Milwaukee', 'Makita', 'Ryobi', 'Craftsman', 'Kobalt', 'Husky', 'Weber', 'Traeger', 'Coleman', 'Yeti', 'Stanley',
+  'IKEA', 'Ashley', 'Sealy', 'Tempur-Pedic', 'Casper', 'Purple', 'Serta', 'Simmons', 'Zinus', 'Threshold', 'Hearth & Hand', 'Room Essentials', 'Mainstays', 'Better Homes & Gardens',
+  'Pottery Barn', 'West Elm', 'Crate & Barrel', 'La-Z-Boy', 'Sauder', 'Nike', 'Adidas', 'Peloton', 'Graco', 'Chicco', 'Fisher-Price', 'LEGO', 'Honeywell', 'Lasko', 'Vornado',
+  'Levoit', 'Brother', 'Epson', 'Singer', 'Rowenta', 'Conair', 'Revlon', 'Braun', 'Oral-B', 'Philips Sonicare',
+];
+
+/** Brand at the start of a product name ("Dyson V8 Cordless…" → "Dyson"). */
+export function brandFromName(name: string): string {
+  const n = name.trim().toLowerCase();
+  const hit = [...BRANDS].sort((a, b) => b.length - a.length).find((b) => n.startsWith(`${b.toLowerCase()} `) || n === b.toLowerCase());
+  return hit ?? '';
+}
+
+const UNIT = /^\d+(\.\d+)?(v|w|in|inch|ft|oz|qt|gb|tb|mb|mm|cm|pk|pc|pcs|ct|lb|lbs|k|p|hz|mah|l|ml|gal|x)$/i;
+
+/** Model number in a product name: a token mixing letters and digits ("V8", "DCD771C2", "KSM150PS"). */
+export function modelFromName(name: string): string {
+  const toks = name
+    .replace(/[(),;|]/g, ' ')
+    .split(/\s+/)
+    .map((t) => t.replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, ''))
+    .filter((t) => t.length >= 2 && t.length <= 20 && /[a-z]/i.test(t) && /\d/.test(t) && !UNIT.test(t) && !/^\d+(st|nd|rd|th)$/i.test(t) && !/^\d+-\w+$/i.test(t));
+  return toks.sort((a, b) => b.length - a.length)[0] ?? '';
+}
+
+/** Fill brand/model from the name when the store page didn't say. */
+export function fillProductGaps(info: ProductInfo): ProductInfo {
+  const brand = info.brand || brandFromName(info.name) || (/ikea\.com$/i.test(info.source) ? 'IKEA' : '');
+  const model = info.model || modelFromName(info.name);
+  return { ...info, brand, model, category: info.category && info.category !== 'other' ? info.category : guessItemCategory(info.name) };
 }

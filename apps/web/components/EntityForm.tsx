@@ -538,8 +538,11 @@ export function ProductLinkImport({ draft, setDraft }: { draft: Row; setDraft: (
         setDraft((d) => ({ ...d, product_url: link }));
         return setMsg(p.error);
       }
-      setDraft((d) => ({ ...d, product_url: link, ...productToItemPatch(p, d as Parameters<typeof productToItemPatch>[1]) }));
-      setMsg(p.note ?? `Found “${p.name}”${p.price != null ? ` · ${formatMoney(p.price)} new` : " — add the price"} from ${p.source}.`);
+      setDraft((d) => ({ ...d, product_url: link, ...productToItemPatch(p, d as Parameters<typeof productToItemPatch>[1], true) }));
+      const got = [p.brand && "brand", p.model && "model", p.price != null && "price", p.image && "photo"].filter(Boolean).join(", ");
+      setMsg(
+        `Filled in “${p.name}”${p.price != null ? ` · ${formatMoney(p.price)} new` : " — add the price"}${got ? ` (name, ${got})` : ""} from ${p.source}.${p.note ? ` ${p.note}.` : ""}`,
+      );
     } catch {
       setMsg("Couldn't open that link — fill the details in yourself.");
     } finally {
