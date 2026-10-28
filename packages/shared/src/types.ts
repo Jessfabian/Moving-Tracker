@@ -226,6 +226,10 @@ export interface Item extends BaseRow {
   fragile: boolean;
   /** Riding with us in the car — left off the mover inventory and size estimate. */
   in_car?: boolean;
+  /** Actual weight of one, if known (otherwise a typical weight for the category is used). */
+  weight_lbs?: number | null;
+  /** "L x W x H" in inches, if measured. */
+  dims_in?: string;
   photos: MediaRef[];
   notes: string;
 }

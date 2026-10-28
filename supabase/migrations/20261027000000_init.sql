@@ -193,6 +193,8 @@ alter table public.items add column if not exists purchase_date date;
 alter table public.items add column if not exists purchase_price numeric;
 alter table public.items add column if not exists product_url text not null default '';
 alter table public.items add column if not exists in_car boolean not null default false;
+alter table public.items add column if not exists weight_lbs numeric;
+alter table public.items add column if not exists dims_in text not null default '';
 alter table public.books add column if not exists photos jsonb not null default '[]';
 
 create table if not exists public.book_sales (

@@ -1,5 +1,6 @@
 import type { Snapshot } from './csv';
 import { estimateBookWeightOz } from './bookselling';
+import { priceRowFor } from './itemPricing';
 import type { Item, Move, MoverQuote } from './types';
 
 /** Typical weight per item (lbs) by inventory category — used when an item isn't packed in a box. */
@@ -59,6 +60,8 @@ export interface MoveSize {
   bookBoxesNeeded: number;
   /** Weight from what's logged in the inventory (books included). */
   inventoryLbs: number;
+  /** Volume of just what's in the inventory (no typical-home padding). */
+  inventoryCubicFeet: number;
   /** Rule-of-thumb weight for this many bedrooms. */
   typicalLbs: number;
   /** Weight used for estimates (the larger of the two — inventories are rarely complete). */
@@ -74,6 +77,28 @@ export interface MoveSize {
 }
 
 const isMoving = (d: string) => d === 'move' || d === 'store' || d === 'undecided';
+
+/** Weight of one of this item: what was entered, or a typical weight for its category. */
+/** Typical weight of one of a few common small things the price table doesn't cover. */
+const SMALL_ITEM_LBS: [RegExp, number][] = [
+  [/plate|bowl|mug|\bcups?\b|glass(es|ware)?\b|stemware|saucer/i, 1],
+  [/cast iron|skillet|dutch oven/i, 6],
+  [/\bpots?\b|\bpans?\b|cookware|baking/i, 4],
+  [/blender|toaster|coffee|kettle|mixer|air fryer|instant pot|slow cooker|crock ?pot/i, 8],
+  [/utensil|silverware|flatware|cutlery|knife|knives/i, 1],
+  [/pillow|cushion/i, 2],
+  [/picture|photo frame|frames?\b/i, 3],
+  [/blanket|throw|towel|sheet/i, 2],
+  [/shoes?\b|boots?\b/i, 2],
+];
+
+/** One item's weight: what was entered, else a typical weight for that kind of item (by name, then category). */
+export function itemWeightLbs(i: Pick<Item, 'category'> & { name?: string; weight_lbs?: number | null }): { lbs: number; actual: boolean } {
+  if (i.weight_lbs != null && i.weight_lbs > 0) return { lbs: i.weight_lbs, actual: true };
+  const name = i.name ?? '';
+  const typical = (name && (priceRowFor(name)?.lbs ?? SMALL_ITEM_LBS.find(([re]) => re.test(name))?.[1])) || CATEGORY_WEIGHT_LBS[i.category] || CATEGORY_WEIGHT_LBS.other!;
+  return { lbs: typical, actual: false };
+}
 
 /** Items the movers will carry: going with us (or to storage / undecided) and not riding in our car. */
 export const isMoverItem = (i: Pick<Item, 'deleted' | 'disposition' | 'in_car'>) => !i.deleted && isMoving(i.disposition) && !i.in_car;
@@ -119,7 +144,7 @@ export function estimateMoveSize(db: Pick<Snapshot, 'rooms' | 'items' | 'boxes' 
   for (const i of items) {
     const qty = Math.max(1, i.quantity ?? 1);
     count += qty;
-    const w = i.box_id ? 0 : (CATEGORY_WEIGHT_LBS[i.category] ?? CATEGORY_WEIGHT_LBS.other!) * qty;
+    const w = i.box_id ? 0 : itemWeightLbs(i).lbs * qty;
     lbs += w;
     bump(i.room_id, 'items', qty, w);
   }
@@ -147,6 +172,7 @@ export function estimateMoveSize(db: Pick<Snapshot, 'rooms' | 'items' | 'boxes' 
     bookLbs: Math.round(bookLbs),
     bookBoxesNeeded,
     inventoryLbs,
+    inventoryCubicFeet: Math.round(otherLbs / LBS_PER_CUFT + bookLbs / BOOK_LBS_PER_CUFT),
     typicalLbs,
     weightLbs,
     basis,
@@ -343,7 +369,7 @@ export type QuoteSection =
 export const QUOTE_SECTIONS: { key: QuoteSection; label: string; on: boolean }[] = [
   { key: 'details', label: 'Move details (from, to, dates, home)', on: true },
   { key: 'notes', label: 'Our notes', on: true },
-  { key: 'size', label: 'Size & weight estimate', on: true },
+  { key: 'size', label: 'Item, box & book counts', on: true },
   { key: 'books', label: 'Books', on: true },
   { key: 'special', label: 'Bulky / special items', on: true },
   { key: 'fragile', label: 'Fragile item count', on: true },
@@ -402,14 +428,10 @@ export function quoteRequestText(move: Move | undefined, size: MoveSize, opts: Q
   const emailOnly = on('emailOnly');
   const section = (title: string, rows: string[]) => (rows.length ? ['', title, ...rows] : []);
 
+  // Weight and volume stay out of the email — they're in the attached PDF, from the actual inventory.
   const sizeRows = [
-    ...(on('size')
-      ? [
-          `• About ${size.weightLbs.toLocaleString()} lbs / ${size.cubicFeet.toLocaleString()} cu ft${size.basis === 'inventory' ? ' (from our itemized inventory of what is actually coming)' : ''}`,
-          `• ${size.itemsToMove} items${size.boxes ? `, ${size.boxes} boxes` : ''}${size.booksToMove ? `, ${size.booksToMove} books` : ''}`,
-        ]
-      : []),
-    ...(on('books') && size.bookLbs ? [`• Books: ${size.booksToMove.toLocaleString()} books ≈ ${size.bookLbs.toLocaleString()} lbs${on('size') ? ' (included above)' : ''}${size.bookBoxesNeeded ? ` — about ${size.bookBoxesNeeded} small book boxes` : ''}`] : []),
+    ...(on('size') ? [`• ${size.itemsToMove} items${size.boxes ? `, ${size.boxes} boxes` : ''}${size.booksToMove ? `, ${size.booksToMove} books` : ''}${on('attachment') ? ' — weights are in the attached inventory' : ''}`] : []),
+    ...(on('books') && size.booksToMove ? [`• Books: ${size.booksToMove.toLocaleString()} books${size.bookBoxesNeeded ? ` — about ${size.bookBoxesNeeded} small book boxes` : ''}`] : []),
     ...(on('special') && size.specialItems.length ? [`• Bulky / special items: ${size.specialItems.join(', ')}`] : []),
     ...(on('fragile') && size.fragileItems ? [`• ${size.fragileItems} fragile items`] : []),
     ...(on('highValue') && size.highValueItems.length ? [`• High-value items: ${size.highValueItems.slice(0, 6).map((h) => h.name).join(', ')}`] : []),
@@ -433,7 +455,7 @@ export function quoteRequestText(move: Move | undefined, size: MoveSize, opts: Q
     ),
     ...(on('notes') && notes.length ? ['', 'PLEASE NOTE', ...notes.map((n) => `• ${n}`)] : []),
     ...section('SIZE (from our inventory)', sizeRows),
-    ...(on('attachment') ? ['', `📎 Attached is an itemized inventory (PDF) of everything we need moved${items.length ? ` — ${items.reduce((a, i) => a + i.qty, 0)} items` : ''}, room by room.`] : []),
+    ...(on('attachment') ? ['', `📎 Attached is an itemized inventory (PDF) of everything we need moved${items.length ? ` — ${items.reduce((a, i) => a + i.qty, 0)} items` : ''}, room by room, with weights.`] : []),
     ...(on('itemList') && items.length ? section('ITEMS TO MOVE', itemListLines(items)) : []),
     ...(on('pleaseInclude') ? section('PLEASE INCLUDE IN YOUR QUOTE', include.map((s) => `• ${s}`)) : []),
     ...(on('questions') ? section('QUESTIONS', questions.map((q, i) => `${i + 1}. ${q}`)) : []),

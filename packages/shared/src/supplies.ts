@@ -1,5 +1,7 @@
-import type { Snapshot } from './csv';
+﻿import type { Snapshot } from './csv';
 import { estimateMoveSize } from './movers';
+import { packItemsFor, packLane, packLocally, type PackBoxKey } from './packing';
+import type { Item } from './types';
 
 export type BoxSize = 'small' | 'medium' | 'large' | 'xl' | 'wardrobe' | 'dish';
 
@@ -59,34 +61,6 @@ export function roomKind(name: string): RoomKind {
   return 'other';
 }
 
-/** Which box an inventory category packs into, and roughly how many items fit in one. */
-const CATEGORY_PACKING: Record<string, [BoxSize, number] | null> = {
-  furniture: null,
-  appliances: null,
-  plants: null,
-  kitchenware: ['medium', 8],
-  clothing: ['large', 15],
-  linens: ['xl', 6],
-  decor: ['medium', 5],
-  toys: ['medium', 8],
-  tools: ['small', 6],
-  sports: ['large', 4],
-  documents: ['small', 20],
-  media: ['small', 30],
-  jewelry: ['small', 30],
-  collectibles: ['medium', 5],
-  garden: ['large', 3],
-  bath: ['small', 15],
-  office: ['small', 15],
-  electronics: ['medium', 3],
-  other: ['medium', 6],
-};
-
-const TV = /\btv\b|television|monitor/i;
-const MATTRESS = /mattress|\bbed\b|bed frame|crib|futon|box spring/i;
-const MIRROR = /mirror|painting|picture|canvas|framed|wall art|artwork/i;
-const DISHES = /dish|plate|bowl|glass|mug|cup|stemware|china|wine/i;
-
 export interface SupplyLine {
   key: string;
   group: 'boxes' | 'specialty' | 'packing' | 'furniture';
@@ -100,10 +74,14 @@ export interface SupplyLine {
 
 export interface SupplyRoom {
   room: string;
+  roomId: string;
   kind: RoomKind;
-  basis: 'inventory' | 'typical';
+  /** inventory = counted from what's logged; packed = from a box-packing run; typical = rule-of-thumb room; none = nothing logged yet. */
+  basis: 'inventory' | 'packed' | 'typical' | 'none';
   boxes: Counts;
   have: number;
+  /** Items that get pads or wrap instead of a box (sofas, mattresses, dressers…). */
+  noBox: number;
 }
 
 export interface SupplyEstimate {
@@ -115,6 +93,18 @@ export interface SupplyEstimate {
   lines: SupplyLine[];
   totalCost: number;
   rooms: SupplyRoom[];
+  basis: SupplyBasis;
+  /** Rooms with nothing logged (counted as zero in inventory mode). */
+  emptyRooms: number;
+}
+
+/** inventory = only what's logged (best when downsizing); typical = at least a typical room's worth. */
+export type SupplyBasis = 'inventory' | 'typical';
+
+export interface SupplyOptions {
+  basis?: SupplyBasis;
+  /** Regular-box counts per room id from a packing run (replaces the built-in estimate for those rooms). */
+  packed?: Record<string, Partial<Record<PackBoxKey, number>>>;
 }
 
 const line = (key: string, group: SupplyLine['group'], name: string, detail: string, qty: number, unit: string, unitPrice: number): SupplyLine => ({
@@ -130,43 +120,62 @@ const line = (key: string, group: SupplyLine['group'], name: string, detail: str
 
 const isMoving = (d: string) => d === 'move' || d === 'store' || d === 'undecided';
 const ORDER: BoxSize[] = ['medium', 'large', 'small', 'xl', 'dish', 'wardrobe'];
+const qtyOf = (i: Item) => Math.max(1, i.quantity ?? 1);
 
 /**
- * Packing-supply shopping list from the inventory: boxes by size per room (the larger of a typical-room
- * baseline and what the logged items need), minus boxes already made, plus tape, paper, wrap and pads.
+ * Packing-supply shopping list. Each room's loose items are packed into boxes (big furniture, mattresses and appliances
+ * get pads/bags instead), boxes already made come off the list, then tape, paper, wrap and pads are added.
+ * With basis "typical", a room never gets fewer boxes than a typical furnished room of that kind.
  */
-export function estimateSupplies(db: Pick<Snapshot, 'rooms' | 'items' | 'boxes' | 'books'>): SupplyEstimate {
+export function estimateSupplies(db: Pick<Snapshot, 'rooms' | 'items' | 'boxes' | 'books'>, opts: SupplyOptions = {}): SupplyEstimate {
+  const mode = opts.basis ?? 'inventory';
   const rooms = db.rooms.filter((r) => !r.deleted);
   const items = db.items.filter((i) => !i.deleted && isMoving(i.disposition));
   const boxes = db.boxes.filter((b) => !b.deleted);
+  const books = db.books.filter((b) => !b.deleted && isMoving(b.disposition));
   const size = estimateMoveSize(db);
 
   const perRoom: SupplyRoom[] = [];
   const total = zero();
+  let emptyRooms = 0;
   for (const r of rooms) {
     const kind = roomKind(r.name);
     const base = { ...zero(), ...ROOM_BASELINE[kind] };
+    const mine = items.filter((i) => i.room_id === r.id);
+    const loose = mine.filter((i) => !i.box_id);
     const inv = zero();
-    const loose = new Map<BoxSize, number>();
-    for (const i of items) {
-      if (i.room_id !== r.id || i.box_id) continue;
-      const qty = Math.max(1, i.quantity ?? 1);
-      const text = `${i.name} ${i.model ?? ''}`;
-      if (TV.test(text) || MATTRESS.test(text) || MIRROR.test(text)) continue;
-      let pack = CATEGORY_PACKING[i.category] ?? CATEGORY_PACKING.other!;
-      if (i.category === 'kitchenware' && DISHES.test(text)) pack = ['dish', 25];
-      if (!pack) continue;
-      loose.set(pack[0], (loose.get(pack[0]) ?? 0) + qty / pack[1]);
+    let dish = 0;
+    let wardrobe = 0;
+    let noBox = 0;
+    for (const i of loose) {
+      const lane = packLane(i);
+      if (lane === 'dish') dish += qtyOf(i);
+      else if (lane === 'wardrobe') wardrobe += qtyOf(i);
+      else if (lane === 'bulky' || lane === 'mattress') noBox += qtyOf(i);
     }
-    for (const [k, n] of loose) inv[k] = Math.ceil(n);
+    inv.dish = Math.ceil(dish / 25);
+    inv.wardrobe = Math.ceil(wardrobe / 15);
+    const packed = opts.packed?.[r.id];
+    const regular = packed ? { small: 0, medium: 0, large: 0, xl: 0, ...packed } : packLocally(packItemsFor(loose)).boxes;
+    for (const k of ['small', 'medium', 'large', 'xl'] as const) inv[k] = regular[k] ?? 0;
     const invTotal = Object.values(inv).reduce((a, b) => a + b, 0);
     const baseTotal = Object.values(base).reduce((a, b) => a + b, 0);
-    const basis: SupplyRoom['basis'] = invTotal >= baseTotal ? 'inventory' : 'typical';
+    const have = boxes.filter((b) => b.room_id === r.id).length;
+    const logged = mine.length > 0 || have > 0 || books.some((b) => b.room_id === r.id);
+    let basis: SupplyRoom['basis'] = packed ? 'packed' : 'inventory';
     const need = zero();
-    for (const k of ORDER) need[k] = Math.max(base[k], inv[k]);
+    if (mode === 'typical') {
+      if (invTotal < baseTotal) basis = 'typical';
+      for (const k of ORDER) need[k] = Math.max(base[k], inv[k]);
+    } else {
+      if (!logged) {
+        basis = 'none';
+        emptyRooms++;
+      }
+      for (const k of ORDER) need[k] = inv[k];
+    }
 
     // Boxes already set up for this room come off the list, regular sizes first.
-    const have = boxes.filter((b) => b.room_id === r.id).length;
     let left = have;
     for (const k of ORDER) {
       const take = Math.min(left, need[k]);
@@ -174,7 +183,7 @@ export function estimateSupplies(db: Pick<Snapshot, 'rooms' | 'items' | 'boxes' 
       left -= take;
     }
     for (const k of ORDER) total[k] += need[k];
-    perRoom.push({ room: r.name, kind, basis, boxes: need, have });
+    perRoom.push({ room: r.name, roomId: r.id, kind, basis, boxes: need, have, noBox });
   }
 
   const bookBoxes = size.bookBoxesNeeded;
@@ -187,12 +196,13 @@ export function estimateSupplies(db: Pick<Snapshot, 'rooms' | 'items' | 'boxes' 
     lines.push(line(`box-${s.key}`, 'boxes', `${s.name} boxes`, detail, total[s.key], 'box', s.price));
   }
 
-  const qtyOf = (re: RegExp) => items.filter((i) => re.test(`${i.name} ${i.model ?? ''}`)).reduce((a, i) => a + Math.max(1, i.quantity ?? 1), 0);
+  const laneQty = (lane: string) => items.filter((i) => packLane(i) === lane).reduce((a, i) => a + qtyOf(i), 0);
   const bedrooms = rooms.filter((r) => ['primary', 'bedroom'].includes(roomKind(r.name))).length;
   const livingRooms = rooms.filter((r) => roomKind(r.name) === 'living').length;
-  const tvs = qtyOf(TV);
-  const mattresses = Math.max(qtyOf(/mattress|\bbed\b|crib|futon/i), bedrooms);
-  const mirrors = Math.max(qtyOf(MIRROR), rooms.length ? Math.ceil((bedrooms + livingRooms) / 2) : 0);
+  const typical = mode === 'typical';
+  const tvs = laneQty('tv');
+  const mattresses = typical ? Math.max(laneQty('mattress'), bedrooms) : laneQty('mattress');
+  const mirrors = typical ? Math.max(laneQty('mirror'), rooms.length ? Math.ceil((bedrooms + livingRooms) / 2) : 0) : laneQty('mirror');
   if (tvs) lines.push(line('tv', 'specialty', 'TV boxes', 'Adjustable 32–70 in, with foam corners', tvs, 'box', 25));
   if (mattresses) lines.push(line('mattress', 'specialty', 'Mattress bags', 'Heavy plastic, sized to each bed', mattresses, 'bag', 6));
   if (mirrors) lines.push(line('mirror', 'specialty', 'Mirror & picture boxes', '4-piece telescoping kit for frames & art', mirrors, 'kit', 10));
@@ -211,17 +221,17 @@ export function estimateSupplies(db: Pick<Snapshot, 'rooms' | 'items' | 'boxes' 
     lines.push(line('labels', 'packing', 'Label sheets', '2×4 in, 10 per sheet — print QR labels from Labels', Math.ceil(totalBoxes / 10), 'sheet', 0.5));
   }
 
-  const furniture = items.filter((i) => i.category === 'furniture' || i.category === 'appliances').reduce((a, i) => a + Math.max(1, i.quantity ?? 1), 0);
-  // About one pad per piece of furniture (big pieces take 2–3, small ones none), bought by the dozen.
-  const furnitureEst = Math.max(furniture, rooms.length * 2);
-  if (rooms.length) {
+  const bulky = laneQty('bulky');
+  // About one pad per big piece (large ones take 2–3, small ones none), bought by the dozen.
+  const furnitureEst = typical ? Math.max(bulky, rooms.length * 2) : bulky;
+  if (furnitureEst) {
     lines.push(line('pads', 'furniture', 'Furniture pads', 'Moving blankets — skip if full-service movers bring them', Math.min(48, Math.max(12, Math.ceil(furnitureEst / 12) * 12)), 'pad', 6));
     lines.push(line('stretch', 'furniture', 'Stretch wrap', '20 in × 1000 ft — keeps drawers shut & pads on', Math.max(1, Math.ceil(furnitureEst / 12)), 'roll', 20));
     lines.push(line('bags', 'furniture', 'Zip bags', 'Quart size, for screws & hardware — tape to the furniture', 1, 'box', 5));
   }
 
   const totalCost = Math.round(lines.reduce((a, l) => a + l.cost, 0));
-  return { boxes: total, totalBoxes, haveBoxes: boxes.length, bookBoxes, lines, totalCost, rooms: perRoom };
+  return { boxes: total, totalBoxes, haveBoxes: boxes.length, bookBoxes, lines, totalCost, rooms: perRoom, basis: mode, emptyRooms };
 }
 
 export function suppliesShoppingList(s: SupplyEstimate): string {

@@ -1,19 +1,27 @@
-import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
+﻿import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 import { ascii, wrap } from "./packet";
 
 export interface InventoryPdfRow {
   name: string;
   detail: string;
   qty: number;
+  /** Total weight for the row, e.g. "180" or "~40" when it's a typical weight rather than weighed. */
+  lbs: string;
+  /** e.g. "$350" or "~$120" (estimated). */
+  value?: string;
+  /** Small JPEG thumbnail of the item (null = item with no photo, undefined = not an item row). */
+  thumb?: Uint8Array | null;
   notes: string;
 }
 
 export interface InventoryPdfRoom {
   room: string;
   rows: InventoryPdfRow[];
-  /** e.g. "3 boxes (#1, #4, #7)" */
+  /** e.g. "3 boxes" */
   boxes: string;
   lbs: number;
+  /** Room total value, e.g. "$1,240". */
+  value?: string;
 }
 
 const W = 612;
@@ -24,7 +32,13 @@ const MUTED = rgb(0.42, 0.42, 0.45);
 const LINE = rgb(0.88, 0.88, 0.9);
 const LIME = rgb(0.82, 0.96, 0.33);
 const SAND = rgb(0.96, 0.95, 0.92);
-const COLS = { n: M, item: M + 24, qty: 352, notes: 384, check: W - M - 14 };
+const THUMB = 30;
+const columns = (photos: boolean, values: boolean) => {
+  const item = M + 24 + (photos ? THUMB + 6 : 0);
+  return values
+    ? { n: M, thumb: M + 22, item, qty: 300, lbs: 328, value: 368, notes: 418, check: W - M - 14 }
+    : { n: M, thumb: M + 22, item, qty: 318, lbs: 350, value: 0, notes: 398, check: W - M - 14 };
+};
 const clean = (s: string) => ascii(s.replace(/×/g, "x").replace(/→/g, "->").replace(/≈/g, "~").replace(/•/g, "-"));
 
 /** An itemized, room-by-room inventory movers can quote from — saved as a real PDF to attach to the email. */
@@ -35,7 +49,12 @@ export async function buildInventoryPdf(opts: {
   notes: string[];
   rooms: InventoryPdfRoom[];
   footnote: string;
+  /** Show the item photo column. */
+  photos?: boolean;
+  /** Show the value column. */
+  values?: boolean;
 }): Promise<Uint8Array> {
+  const COLS = columns(!!opts.photos, !!opts.values);
   const pdf = await PDFDocument.create();
   pdf.setTitle(clean(opts.title));
   pdf.setCreator("moving.tracker");
@@ -88,6 +107,8 @@ export async function buildInventoryPdf(opts: {
     text(page, "#", COLS.n + 4, y, 7.5, bold, MUTED);
     text(page, "ITEM", COLS.item, y, 7.5, bold, MUTED);
     text(page, "QTY", COLS.qty, y, 7.5, bold, MUTED);
+    text(page, "LBS", COLS.lbs, y, 7.5, bold, MUTED);
+    if (opts.values) text(page, "VALUE", COLS.value, y, 7.5, bold, MUTED);
     text(page, "NOTES", COLS.notes, y, 7.5, bold, MUTED);
     y -= 18;
   };
@@ -97,7 +118,7 @@ export async function buildInventoryPdf(opts: {
     if (y < 130) newPage();
     y -= 6;
     text(page, r.room, M, y, 13, bold);
-    const meta = [`${r.rows.reduce((a, x) => a + x.qty, 0)} items`, r.boxes, r.lbs ? `~${r.lbs.toLocaleString()} lbs` : ""].filter(Boolean).join("  |  ");
+    const meta = [`${r.rows.reduce((a, x) => a + x.qty, 0)} items`, r.boxes, r.lbs ? `${r.lbs.toLocaleString()} lbs` : "", opts.values && r.value ? r.value : ""].filter(Boolean).join("  |  ");
     text(page, meta, M + bold.widthOfTextAtSize(clean(r.room), 13) + 10, y + 1, 9, font, MUTED);
     y -= 18;
     if (!r.rows.length) {
@@ -110,7 +131,7 @@ export async function buildInventoryPdf(opts: {
       const nameLines = wrap(clean(row.name), bold, 9.5, COLS.qty - COLS.item - 8);
       const detailLines = row.detail ? wrap(clean(row.detail), font, 8, COLS.qty - COLS.item - 8) : [];
       const noteLines = row.notes ? wrap(clean(row.notes), font, 8.5, COLS.check - COLS.notes - 8) : [];
-      const h = Math.max(nameLines.length * 11.5 + detailLines.length * 10, noteLines.length * 10.5) + 6;
+      const h = Math.max(nameLines.length * 11.5 + detailLines.length * 10, noteLines.length * 10.5, opts.photos ? THUMB - 4 : 0) + 6;
       if (y - h < 50) {
         newPage();
         text(page, `${r.room} (continued)`, M, y, 10, bold, MUTED);
@@ -122,6 +143,13 @@ export async function buildInventoryPdf(opts: {
       nameLines.forEach((l, i) => text(page, l, COLS.item, y - i * 11.5, 9.5, bold));
       detailLines.forEach((l, i) => text(page, l, COLS.item, y - nameLines.length * 11.5 - i * 10, 8, font, MUTED));
       text(page, String(row.qty), COLS.qty + 4, y, 9.5);
+      if (row.lbs) text(page, row.lbs, COLS.lbs, y, 9.5);
+      if (opts.values && row.value) text(page, row.value, COLS.value, y, 9.5);
+      if (opts.photos) {
+        const img = row.thumb ? await pdf.embedJpg(row.thumb).catch(() => null) : null;
+        if (img) page.drawImage(img, { x: COLS.thumb, y: y - THUMB + 9, width: THUMB, height: THUMB });
+        else if (row.thumb === null) page.drawRectangle({ x: COLS.thumb, y: y - THUMB + 9, width: THUMB, height: THUMB, color: SAND });
+      }
       noteLines.forEach((l, i) => text(page, l, COLS.notes, y - i * 10.5, 8.5));
       page.drawRectangle({ x: COLS.check, y: y - 2, width: 9, height: 9, borderColor: MUTED, borderWidth: 0.75 });
       y -= h;

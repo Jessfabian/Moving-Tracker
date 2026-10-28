@@ -1,13 +1,19 @@
 "use client";
 
 import {
+  DEFAULT_BOX_LBS,
   DEFAULT_EMAIL_QUESTIONS,
+  estimateBookWeightOz,
   formatMoney,
   isMoverItem,
+  itemPriceIdea,
+  itemWeightLbs,
+  LBS_PER_CUFT,
   MOVER_QUESTIONS,
   PLEASE_INCLUDE,
   QUOTE_SECTIONS,
   quoteRequestText,
+  signedMediaUrl,
   type Item,
   type MoveSize,
   type QuoteListItem,
@@ -15,8 +21,30 @@ import {
 } from "@moving/shared";
 import { useMemo, useState, useSyncExternalStore } from "react";
 import { download } from "@/lib/media";
-import { buildInventoryPdf, type InventoryPdfRoom } from "@/lib/inventoryPdf";
-import { useDb, useStore } from "@/lib/store-context";
+import { buildInventoryPdf, type InventoryPdfRoom, type InventoryPdfRow } from "@/lib/inventoryPdf";
+import { useApp, useDb, useStore } from "@/lib/store-context";
+
+/** Square ~96px JPEG thumbnail, or null when the item has no usable picture. */
+async function thumbFrom(url: string): Promise<Uint8Array | null> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const bmp = await createImageBitmap(await res.blob());
+    const S = 96;
+    const side = Math.min(bmp.width, bmp.height);
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = S;
+    const ctx = canvas.getContext("2d")!;
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, S, S);
+    ctx.drawImage(bmp, (bmp.width - side) / 2, (bmp.height - side) / 2, side, side, 0, 0, S, S);
+    bmp.close();
+    const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/jpeg", 0.75));
+    return blob ? new Uint8Array(await blob.arrayBuffer()) : null;
+  } catch {
+    return null;
+  }
+}
 
 type Db = ReturnType<typeof useDb>;
 type Line = { text: string; on: boolean };
@@ -33,6 +61,10 @@ export interface EmailPrefs {
   excluded: string[];
   /** Size the move from the inventory alone, not the house size. */
   downsizing: boolean;
+  /** Show item thumbnails in the inventory PDF. */
+  pdfPhotos: boolean;
+  /** Show each item's value (and room / total values) in the inventory PDF. */
+  pdfValues: boolean;
 }
 
 const PKEY = "moving-tracker.quote-email.v1";
@@ -67,6 +99,8 @@ export function defaultPrefs(db: Db): EmailPrefs {
     include: PLEASE_INCLUDE.map((_, i) => i),
     excluded: [],
     downsizing: true,
+    pdfPhotos: true,
+    pdfValues: true,
   };
 }
 
@@ -116,7 +150,7 @@ function itemNotes(i: Item, db: Db, size: MoveSize) {
     size.specialItems.includes(i.name) ? "Bulky / special handling" : "",
     i.fragile ? "Fragile" : "",
     box ? `Packed in box #${box.number}` : "",
-    (i.est_value ?? 0) >= 500 ? `High value (~${formatMoney(i.est_value ?? 0)})` : "",
+    (i.est_value ?? 0) >= 500 ? "High value" : "",
     i.disposition === "store" ? "To storage" : "",
     i.disposition === "undecided" ? "May not come" : "",
   ]
@@ -129,6 +163,15 @@ const fileName = (db: Db) => `Moving inventory - ${[db.moves[0]?.from_city, db.m
 export function QuoteEmail({ size, prefs, setPrefs, onPrint }: { size: MoveSize; prefs: EmailPrefs; setPrefs: (p: EmailPrefs | null) => void; onPrint: (request: { subject: string; body: string }, items: Item[]) => void }) {
   const db = useDb();
   const store = useStore();
+  const { supabase } = useApp();
+  const itemThumb = async (i: Item): Promise<Uint8Array | null> => {
+    for (const m of i.photos ?? []) {
+      const url = m.uri ?? (m.remotePath && supabase ? await signedMediaUrl(supabase, m.remotePath).catch(() => null) : null);
+      const t = url ? await thumbFrom(url) : null;
+      if (t) return t;
+    }
+    return i.image_url ? thumbFrom(/^(data|blob):/.test(i.image_url) ? i.image_url : `/api/image?url=${encodeURIComponent(i.image_url)}`) : null;
+  };
   const move = db.moves[0];
   const contact = contactFor(db);
   const [copied, setCopied] = useState(false);
@@ -164,32 +207,92 @@ export function QuoteEmail({ size, prefs, setPrefs, onPrint }: { size: MoveSize;
 
   const makePdf = async () => {
     const boxes = db.boxes.filter((b) => !b.deleted);
-    const rooms: InventoryPdfRoom[] = byRoom(listed).map(([name, list]) => {
-      const bx = boxes.filter((b) => (b.room_id ? db.rooms.find((r) => r.id === b.room_id)?.name : "Unassigned") === name).sort((a, b) => a.number - b.number);
-      return {
-        room: name,
-        rows: list.map((i) => ({ name: i.name, detail: [i.brand, i.model].filter(Boolean).join(" "), qty: Math.max(1, i.quantity ?? 1), notes: itemNotes(i, db, size) })),
-        boxes: bx.length ? `${bx.length} box${bx.length === 1 ? "" : "es"} (${bx.map((b) => `#${b.number}`).join(", ")})` : "",
-        lbs: size.byRoom.find((r) => r.room === name)?.lbs ?? 0,
-      };
-    });
-    // Rooms holding only boxes still matter to the mover.
-    for (const r of size.byRoom) {
-      if (rooms.some((x) => x.room === r.room) || !r.boxes) continue;
-      const bx = boxes.filter((b) => (b.room_id ? db.rooms.find((x) => x.id === b.room_id)?.name : "Unassigned") === r.room);
-      rooms.push({ room: r.room, rows: [], boxes: `${bx.length} box${bx.length === 1 ? "" : "es"} (${bx.map((b) => `#${b.number}`).join(", ")})`, lbs: r.lbs });
+    const books = db.books.filter((b) => !b.deleted && ["move", "store", "undecided"].includes(b.disposition));
+    const roomOf = (id: string | null) => (id ? db.rooms.find((r) => r.id === id && !r.deleted)?.name : undefined) ?? "Unassigned";
+    const bookLbs = (list: typeof books) => list.reduce((a, b) => a + estimateBookWeightOz(b) / 16, 0);
+    const fmt = (n: number, est: boolean) => `${est ? "~" : ""}${Math.round(n).toLocaleString()}`;
+    const boxRows = (room: string) =>
+      boxes
+        .filter((b) => roomOf(b.room_id) === room)
+        .sort((a, b) => a.number - b.number)
+        .map((b) => {
+          const inside = books.filter((x) => x.box_id === b.id);
+          const lbs = b.weight_lbs ?? (inside.length ? bookLbs(inside) + 1 : DEFAULT_BOX_LBS);
+          const label = [b.label, b.contents].filter(Boolean).join(" — ") || (inside.length ? `${inside.length} books` : "");
+          return { row: { name: `Box #${b.number}`, detail: label, qty: 1, lbs: fmt(lbs, b.weight_lbs == null), notes: [b.fragile ? "Fragile" : "", b.weight_lbs == null ? "" : "Weighed"].filter(Boolean).join(" · ") }, lbs };
+        });
+    const boxIds = new Set(boxes.map((b) => b.id));
+    const names = [...new Set([...byRoom(listed).map(([n]) => n), ...boxes.map((b) => roomOf(b.room_id)), ...books.filter((b) => !b.box_id || !boxIds.has(b.box_id)).map((b) => roomOf(b.room_id))])];
+    const order = (n: string) => {
+      const i = byRoom(listed).findIndex(([x]) => x === n);
+      return i < 0 ? 999 : i;
+    };
+    const thumbs = new Map<string, Uint8Array | null>();
+    if (prefs.pdfPhotos) {
+      setBusy("Adding photos…");
+      await Promise.all(listed.map(async (i) => thumbs.set(i.id, await itemThumb(i))));
     }
+    let totalLbs = 0;
+    let estimated = false;
+    let totalValue = 0;
+    let valueEstimated = false;
+    const rooms: InventoryPdfRoom[] = names
+      .sort((a, b) => order(a) - order(b))
+      .map((name) => {
+        const list = byRoom(listed).find(([n]) => n === name)?.[1] ?? [];
+        let lbs = 0;
+        let roomValue = 0;
+        let roomEst = false;
+        const rows = list.map((i): InventoryPdfRow => {
+          const qty = Math.max(1, i.quantity ?? 1);
+          const w = itemWeightLbs(i);
+          if (!i.box_id) {
+            lbs += w.lbs * qty;
+            if (!w.actual) estimated = true;
+          }
+          const each = i.est_value ?? itemPriceIdea(i).likely;
+          roomValue += each * qty;
+          if (i.est_value == null) valueEstimated = roomEst = true;
+          return {
+            name: i.name,
+            detail: [i.brand, i.model, i.dims_in ? `${i.dims_in} in` : ""].filter(Boolean).join(" "),
+            qty,
+            lbs: i.box_id ? "in box" : fmt(w.lbs * qty, !w.actual),
+            value: each ? `${i.est_value == null ? "~" : ""}${formatMoney(each * qty)}` : "",
+            thumb: prefs.pdfPhotos ? (thumbs.get(i.id) ?? null) : undefined,
+            notes: itemNotes(i, db, size),
+          };
+        });
+        const loose = books.filter((b) => roomOf(b.room_id) === name && (!b.box_id || !boxIds.has(b.box_id)));
+        if (loose.length) {
+          const w = bookLbs(loose);
+          lbs += w;
+          estimated = true;
+          rows.push({ name: `Books (not boxed yet)`, detail: "", qty: loose.length, lbs: fmt(w, true), notes: `About ${Math.ceil(w / 35)} small book boxes` });
+        }
+        const bx = boxRows(name);
+        for (const b of bx) {
+          lbs += b.lbs;
+          if (b.row.lbs.startsWith("~")) estimated = true;
+          rows.push(b.row);
+        }
+        totalLbs += lbs;
+        totalValue += roomValue;
+        return { room: name, rows, boxes: bx.length ? `${bx.length} box${bx.length === 1 ? "" : "es"}` : "", lbs: Math.round(lbs), value: roomValue ? `${roomEst ? "~" : ""}${formatMoney(roomValue)}` : "" };
+      })
+      .filter((r) => r.rows.length);
     const from = [move?.from_city, move?.from_state].filter(Boolean).join(", ") || "—";
     const to = [move?.to_city, move?.to_state].filter(Boolean).join(", ") || "—";
     const bytes = await buildInventoryPdf({
       title: "Household inventory for movers",
       subtitle: `${from} -> ${to}${move?.distance_miles ? ` (${move.distance_miles.toLocaleString()} miles)` : ""}  |  ${contact.name ?? ""}${contact.email ? `  |  ${contact.email}` : ""}  |  ${new Date().toLocaleDateString()}`,
       summary: [
-        ["Est. weight", `${size.weightLbs.toLocaleString()} lbs`],
-        ["Volume", `${size.cubicFeet.toLocaleString()} cu ft`],
+        ["Total weight", `${Math.round(totalLbs).toLocaleString()} lbs`],
+        ["Volume", `${Math.round(totalLbs / LBS_PER_CUFT).toLocaleString()} cu ft`],
         ["Items listed", listItems.reduce((a, i) => a + i.qty, 0).toLocaleString()],
-        ["Boxes", size.boxes.toLocaleString()],
-        ...(size.booksToMove ? ([["Books", `${size.booksToMove.toLocaleString()} (~${size.bookLbs.toLocaleString()} lbs)`]] as [string, string][]) : []),
+        ...(prefs.pdfValues && totalValue ? ([["Total value", `${valueEstimated ? "~" : ""}${formatMoney(totalValue)}`]] as [string, string][]) : []),
+        ["Boxes", boxes.length.toLocaleString()],
+        ...(books.length ? ([["Books", books.length.toLocaleString()]] as [string, string][]) : []),
         ...(size.fragileItems ? ([["Fragile", String(size.fragileItems)]] as [string, string][]) : []),
       ],
       notes: [
@@ -198,7 +301,9 @@ export function QuoteEmail({ size, prefs, setPrefs, onPrint }: { size: MoveSize;
         ...(on("notes") ? prefs.notes.filter((n) => n.on && n.text.trim()).map((n) => n.text.trim()) : []),
       ],
       rooms,
-      footnote: `Items riding with us in our car are not listed.${on("emailOnly") && contact.email ? ` Please reply by email only: ${contact.email}` : ""}`,
+      photos: prefs.pdfPhotos,
+      values: prefs.pdfValues,
+      footnote: `Weights are from our room-by-room inventory${estimated ? " (~ = typical weight for that kind of item, not weighed)" : ""}.${prefs.pdfValues && valueEstimated ? " Values marked ~ are estimates." : ""} Items riding with us in our car are not listed.${on("emailOnly") && contact.email ? ` Reply by email: ${contact.email}` : ""}`,
     });
     return new File([bytes as BlobPart], fileName(db), { type: "application/pdf" });
   };
@@ -271,6 +376,17 @@ export function QuoteEmail({ size, prefs, setPrefs, onPrint }: { size: MoveSize;
         <button className="btn-ghost col-span-2" onClick={() => onPrint(request, listed)}>
           🖨️ Print quote packet
         </button>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl bg-ink/[0.04] px-3 py-1.5 text-[13px]">
+        <span className="font-semibold text-gray-500 max-sm:w-full max-sm:pt-1">In the PDF:</span>
+        <label className="flex min-h-9 items-center gap-2">
+          <input type="checkbox" className="h-4 w-4" style={{ accentColor: "#0d0d0f" }} checked={prefs.pdfPhotos} onChange={() => update({ pdfPhotos: !prefs.pdfPhotos })} />
+          Photos
+        </label>
+        <label className="flex min-h-9 items-center gap-2">
+          <input type="checkbox" className="h-4 w-4" style={{ accentColor: "#0d0d0f" }} checked={prefs.pdfValues} onChange={() => update({ pdfValues: !prefs.pdfValues })} />
+          Values
+        </label>
       </div>
       <p className="mt-2 text-xs text-gray-500">
         {busy ?? (

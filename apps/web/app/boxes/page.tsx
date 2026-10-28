@@ -235,13 +235,15 @@ export default function BoxesPage() {
         }
       />
       {msg && <p className="mb-3 rounded-lg bg-amber-50 p-2 text-sm text-amber-800">{msg}</p>}
-      {supplies.totalBoxes > 0 && (
+      {(supplies.totalBoxes > 0 || supplies.rooms.length > 0) && (
         <button type="button" onClick={() => setShowSupplies(true)} className="card mb-4 flex w-full items-center gap-3 text-left">
           <span className="flex h-11 w-11 flex-none items-center justify-center rounded-2xl bg-amber-100 text-2xl">🧰</span>
           <span className="min-w-0 flex-1">
             <span className="block text-[15px] font-semibold">Packing supplies</span>
             <span className="block text-[13px] text-gray-500">
-              About {supplies.totalBoxes} more boxes ({sizeSummary}) + tape, paper &amp; wrap · ~{formatMoney(supplies.totalCost)}
+              {supplies.totalBoxes > 0
+                ? <>About {supplies.totalBoxes} more boxes ({sizeSummary}) + tape, paper &amp; wrap · ~{formatMoney(supplies.totalCost)}</>
+                : "Log what you're bringing in Inventory to count boxes"}
             </span>
           </span>
           <span className="flex-none text-xl text-gray-300">›</span>

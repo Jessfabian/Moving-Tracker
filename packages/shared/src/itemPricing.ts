@@ -1,4 +1,4 @@
-import { CATEGORY_WEIGHT_LBS } from './movers';
+import { itemWeightLbs } from './movers';
 import { isComputerPart } from './products';
 import type { Item } from './types';
 
@@ -48,7 +48,7 @@ export const USED_PRICES: PriceRow[] = [
   { match: /bar ?stool|\bstool/i, name: 'Stool', category: 'furniture', low: 10, likely: 20, high: 50, lbs: 12 },
   { match: /\bbench\b/i, name: 'Bench', category: 'furniture', low: 15, likely: 40, high: 100, lbs: 30 },
   { match: /cabinet|hutch|sideboard|buffet|credenza/i, name: 'Cabinet / sideboard', category: 'furniture', low: 30, likely: 80, high: 200, lbs: 80 },
-  { match: /\btables?\b/i, name: 'Table', category: 'furniture', low: 20, likely: 50, high: 120, lbs: 40 },
+  { match: /\btables?\b(?!\s*lamps?)/i, name: 'Table', category: 'furniture', low: 20, likely: 50, high: 120, lbs: 40 },
   { match: /refrigerator|fridge/i, name: 'Refrigerator', category: 'appliances', low: 150, likely: 300, high: 700, lbs: 250, tip: 'Most apartments include one — usually worth selling rather than moving.' },
   { match: /chest freezer|freezer/i, name: 'Freezer', category: 'appliances', low: 60, likely: 120, high: 250, lbs: 100 },
   { match: /washer|washing machine/i, name: 'Washer', category: 'appliances', low: 100, likely: 200, high: 400, lbs: 160 },
@@ -197,7 +197,7 @@ export function marketplaceLinks(name: string, city = ''): { label: string; url:
  * if hauling it costs about as much as it's worth, sell it and re-buy there.
  */
 export function itemPriceIdea(
-  item: Pick<Item, 'name' | 'category' | 'condition' | 'quantity'> & Partial<Pick<Item, 'retail_price' | 'brand' | 'purchase_date' | 'purchase_price'>>,
+  item: Pick<Item, 'name' | 'category' | 'condition' | 'quantity'> & Partial<Pick<Item, 'retail_price' | 'brand' | 'purchase_date' | 'purchase_price' | 'weight_lbs'>>,
   opts: { costPerLb?: number; today?: Date } = {},
 ): PriceIdea {
   const qty = Math.max(1, item.quantity || 1);
@@ -259,7 +259,7 @@ export function itemPriceIdea(
   }
   if (qty > 1) steps.push(`Prices are per item — you have ${qty}.`);
   steps.push('Range: low ≈ quick sale, high ≈ patient seller. Always check eBay “sold” listings for the real number.');
-  const lbs = pcPart ? 2 : (row?.lbs ?? CATEGORY_WEIGHT_LBS[category] ?? CATEGORY_WEIGHT_LBS.other!);
+  const lbs = pcPart ? (item.weight_lbs ?? 2) : itemWeightLbs({ category, name: item.name, weight_lbs: item.weight_lbs }).lbs;
   const moveCost = Math.round(lbs * qty * (opts.costPerLb ?? DEFAULT_MOVE_COST_PER_LB));
   const value = likely * qty;
   let verdict: PriceIdea['verdict'];
