@@ -12,6 +12,7 @@ import {
   gradeColor,
   apartmentAddress,
   apartmentCosts,
+  apartmentDeposit,
   apartmentFit,
   apartmentLatLng,
   cashflow,
@@ -82,6 +83,29 @@ function useAutoGeocode() {
       });
     }, 1100);
     return () => clearTimeout(t);
+  }, [db.apartments, store]);
+}
+
+const stripUrls = (s: string) => s.replace(/\s*https?:\/\/\S+/g, "").replace(/#{2,}/g, "#").trim();
+
+/** One-time tidy of listings saved before Rent.com names were cleaned (stray "##" and realtor URLs). */
+function useCleanSavedListings() {
+  const db = useDb();
+  const store = useStore();
+  useEffect(() => {
+    for (const a of db.apartments) {
+      const patch: Partial<Apartment> = {};
+      if (a.name?.includes("##")) patch.name = a.name.replace(/#{2,}/g, "#");
+      if (a.address?.includes("##")) {
+        patch.address = a.address.replace(/#{2,}/g, "#");
+        if (a.geocoded_address === apartmentAddress(a)) patch.geocoded_address = apartmentAddress({ ...a, address: patch.address });
+      }
+      if (a.contact_name && /https?:\/\/|##/.test(a.contact_name)) patch.contact_name = stripUrls(a.contact_name);
+      if (a.notes && /managed by [^\n]*https?:\/\//.test(a.notes)) {
+        patch.notes = a.notes.replace(/(managed by [^\n]*?)\s*https?:\/\/\S+?(\.\s|\.?$|\s)/, "$1$2").replace(/#{2,}/g, "#");
+      }
+      if (Object.keys(patch).length) store.update("apartments", a.id, patch);
+    }
   }, [db.apartments, store]);
 }
 
@@ -574,7 +598,7 @@ function Detail({ a }: { a: Apartment }) {
       ["Parking", a.parking_fee],
       ["Utilities (est.)", a.utilities_est],
       ["Other monthly", a.other_monthly],
-      ["Deposit", a.deposit],
+      [apartmentDeposit(a).assumed ? "Deposit (1 month, assumed)" : "Deposit", apartmentDeposit(a).amount],
       ["Application fee", a.application_fee],
       ["Admin fee", a.admin_fee],
       ["Broker fee", a.broker_fee],
@@ -633,8 +657,8 @@ function Detail({ a }: { a: Apartment }) {
           </a>
         )}
         {a.phone && (
-          <a className="btn-secondary" href={`tel:${a.phone.replace(/[^\d+]/g, "")}`}>
-            📞 Call{a.contact_name ? ` ${a.contact_name}` : ""}
+          <a className="btn-secondary min-w-0 max-w-full" href={`tel:${a.phone.replace(/[^\d+]/g, "")}`}>
+            <span className="truncate">📞 Call{stripUrls(a.contact_name ?? "") ? ` ${stripUrls(a.contact_name ?? "")}` : ""}</span>
           </a>
         )}
         {a.email && (
@@ -699,6 +723,7 @@ function Detail({ a }: { a: Apartment }) {
 
 function Top({ api }: { api: CrudApi<"apartments"> }) {
   useAutoGeocode();
+  useCleanSavedListings();
   return (
     <>
       <Overview api={api} />

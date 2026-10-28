@@ -13,11 +13,18 @@ export interface ApartmentCosts {
 
 /** True monthly cost, cash needed to move in, and total cost over the first 12 months.
  *  Pet rent / pet deposits are excluded: our pet is an ESA, so under the Fair Housing Act landlords can't charge them. */
+/** Security deposit — assumed to be one month's rent unless one was entered. */
+export function apartmentDeposit(a: Partial<Apartment>): { amount: number; assumed: boolean } {
+  if (typeof a.deposit === 'number' && Number.isFinite(a.deposit)) return { amount: a.deposit, assumed: false };
+  return { amount: n(a.rent), assumed: true };
+}
+
 export function apartmentCosts(a: Partial<Apartment>): ApartmentCosts {
   const monthly = n(a.rent) + n(a.parking_fee) + n(a.utilities_est) + n(a.other_monthly);
-  const oneTime = n(a.deposit) + n(a.application_fee) + n(a.admin_fee) + n(a.broker_fee);
+  const deposit = apartmentDeposit(a).amount;
+  const oneTime = deposit + n(a.application_fee) + n(a.admin_fee) + n(a.broker_fee);
   const moveIn = oneTime + monthly;
-  const refundable = n(a.deposit);
+  const refundable = deposit;
   const firstYear = monthly * 12 + oneTime - refundable;
   return {
     monthly,

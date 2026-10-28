@@ -625,7 +625,7 @@ export const SCHEMAS: Record<TableName, EntitySchema> = {
       { key: 'parking_fee', label: 'Parking / mo', type: 'money', section: 'Costs' },
       { key: 'utilities_est', label: 'Utilities estimate / mo', type: 'money', section: 'Costs' },
       { key: 'other_monthly', label: 'Other monthly (amenity, trash, internet…)', type: 'money', section: 'Costs' },
-      { key: 'deposit', label: 'Security deposit', type: 'money', section: 'Costs' },
+      { key: 'deposit', label: 'Security deposit', type: 'money', section: 'Costs', help: "Leave blank to assume 1 month's rent." },
       { key: 'application_fee', label: 'Application fee', type: 'money', section: 'Costs' },
       { key: 'admin_fee', label: 'Admin / holding fee', type: 'money', section: 'Costs' },
       { key: 'broker_fee', label: 'Broker fee', type: 'money', section: 'Costs' },

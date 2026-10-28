@@ -59,6 +59,11 @@ describe('apartments', () => {
     expect(c.perSqft).toBe(2);
     expect(c.perBedroom).toBe(1000);
   });
+  it("assumes a 1-month deposit when none is entered, but honours an explicit value", () => {
+    expect(apartmentCosts({ ...DEFAULTS.apartments, rent: 1800, deposit: null }).moveIn).toBe(3600);
+    expect(apartmentCosts({ ...DEFAULTS.apartments, rent: 1800, deposit: 500 }).moveIn).toBe(2300);
+    expect(apartmentCosts({ ...DEFAULTS.apartments, rent: 1800, deposit: 0 }).moveIn).toBe(1800);
+  });
 });
 
 describe('QR label maker', () => {
