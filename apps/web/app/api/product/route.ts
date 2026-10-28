@@ -58,11 +58,9 @@ export async function GET(request: Request) {
         signal: AbortSignal.timeout(10000),
       });
       const info = res.ok ? parseTargetProduct(await res.json()) : null;
-      if (new URL(request.url).searchParams.has("diag")) return Response.json({ diag: res.status, body: info ? "ok" : (await res.text().catch(() => "")).slice(0, 300) });
       if (info) return finish(info);
-    } catch (e) {
-      if (new URL(request.url).searchParams.has("diag")) return Response.json({ diag: String(e) });
-      /* fall back to the page */
+    } catch {
+      /* Target's bot wall blocks most servers — fall back to the page */
     }
   }
 
