@@ -38,7 +38,7 @@ export default function InventoryPage() {
     const needle = q.toLowerCase();
     return db.items
       .filter((i) => !roomId || (roomId === "none" ? !i.room_id : i.room_id === roomId))
-      .filter((i) => !disp || i.disposition === disp)
+      .filter((i) => !disp || (disp === "car" ? i.in_car : i.disposition === disp))
       .filter((i) => !cat || i.category === cat)
       .filter((i) => !needle || `${i.name} ${i.brand} ${i.notes} ${i.barcode}`.toLowerCase().includes(needle))
       .sort((a, b) => b.created_at.localeCompare(a.created_at));
@@ -204,6 +204,7 @@ export default function InventoryPage() {
         <input type="search" className="input order-first col-span-2 sm:order-none sm:max-w-xs sm:flex-1" placeholder="Search items…" value={q} onChange={(e) => setQ(e.target.value)} />
         <select className="input sm:w-auto" value={disp} onChange={(e) => setDisp(e.target.value)}>
           <option value="">Any plan</option>
+          <option value="car">🚗 Coming in our car</option>
           {DISPOSITIONS.map((d) => (
             <option key={d.value} value={d.value}>
               {d.label}
@@ -231,6 +232,12 @@ export default function InventoryPage() {
               {d.label}
             </button>
           ))}
+          <button className="col-span-2 min-h-11 truncate rounded-xl bg-sky-600 px-2 font-medium lg:min-h-9" onClick={() => bulk({ in_car: true, disposition: "move" })}>
+            🚗 In our car
+          </button>
+          <button className="col-span-2 min-h-11 truncate rounded-xl bg-gray-700 px-2 font-medium lg:min-h-9" onClick={() => bulk({ in_car: false })}>
+            🚚 Movers take it
+          </button>
           <select className="col-span-2 min-h-11 min-w-0 rounded-xl bg-gray-700 px-2 lg:min-h-9" value="" onChange={(e) => e.target.value && bulk({ room_id: e.target.value })}>
             <option value="">Move to room…</option>
             {rooms.map((r) => (
@@ -289,7 +296,7 @@ export default function InventoryPage() {
                       {i.name}
                     </div>
                     <div className="truncate text-[13px] text-gray-500">
-                      {[r?.name, optionLabel(ITEM_CATEGORIES, i.category), box && `📦 #${box.number}`].filter(Boolean).join(" · ")}
+                      {[i.in_car && "🚗 In our car", r?.name, optionLabel(ITEM_CATEGORIES, i.category), box && `📦 #${box.number}`].filter(Boolean).join(" · ")}
                     </div>
                   </div>
                 </button>
@@ -340,7 +347,7 @@ export default function InventoryPage() {
                       {i.name}
                     </div>
                     <div className="text-xs text-gray-500">
-                      {[r?.name, optionLabel(ITEM_CATEGORIES, i.category), box && `📦 #${box.number}`].filter(Boolean).join(" · ")}
+                      {[i.in_car && "🚗 In our car", r?.name, optionLabel(ITEM_CATEGORIES, i.category), box && `📦 #${box.number}`].filter(Boolean).join(" · ")}
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="chip" style={{ background: `${DISPOSITION_COLORS[i.disposition]}1a`, color: DISPOSITION_COLORS[i.disposition] }}>

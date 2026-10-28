@@ -68,7 +68,15 @@ export interface ApartmentSearch {
   minRent?: number | null;
   homeType: 'any' | 'apartment' | 'house' | 'townhome';
   mustHaves: string[];
+  /** Search around one of the move's places (e.g. his job) instead of a single city. */
+  nearPlaceId?: string | null;
+  radiusMode?: 'miles' | 'minutes';
+  radiusMiles?: number | null;
+  maxMinutes?: number | null;
 }
+
+export const RADIUS_MILES = [5, 10, 15, 20, 30, 40] as const;
+export const COMMUTE_MINUTES = [10, 15, 20, 30, 45, 60] as const;
 
 /** Quick rent ranges offered as one-tap chips. */
 export const RENT_RANGES: { label: string; min: number | null; max: number | null }[] = [

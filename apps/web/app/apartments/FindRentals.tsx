@@ -4,6 +4,8 @@
 import {
   APARTMENT_MUST_HAVES,
   apartmentSearchLinks,
+  cityStateFromAddress,
+  COMMUTE_MINUTES,
   distanceToPlace,
   filterRentals,
   formatMiles,
@@ -11,9 +13,11 @@ import {
   maxAffordableRent,
   mustHaveScore,
   primaryPlace,
+  RADIUS_MILES,
   rentalBestPlan,
   rentalToApartment,
   RENT_RANGES,
+  searchRadiusMiles,
   type ApartmentSearch,
   type MediaRef,
   type RentalResult,
@@ -24,7 +28,7 @@ import { useLocalState } from "@/lib/hooks";
 import { imageUrlToMedia } from "@/lib/media";
 import { useDb, useStore } from "@/lib/store-context";
 
-type Found = { at: string; key: string; results: RentalResult[] };
+type Found = { at: string; key: string; results: RentalResult[]; searched?: string[]; around?: string; partial?: boolean };
 const PAGE = 10;
 const KEEP_PHOTOS = 12;
 
@@ -42,7 +46,7 @@ export function FindRentals({ api }: { api: CrudApi<"apartments"> }) {
   const [found, setFound] = useLocalState<Found | null>("apt:found", null);
   const [hidden, setHidden] = useLocalState<string[]>("apt:foundHidden", []);
   const [sortBy, setSortBy] = useLocalState("apt:foundSort", "match");
-  const [cityOnly, setCityOnly] = useLocalState("apt:foundCityOnly", true);
+  const [town, setTown] = useLocalState("apt:foundTown", "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [shown, setShown] = useState(PAGE);
@@ -51,19 +55,35 @@ export function FindRentals({ api }: { api: CrudApi<"apartments"> }) {
   const s = { ...fallback, ...(saved ?? {}) };
   const set = (patch: Partial<ApartmentSearch>) => setSaved({ ...s, ...patch });
   const num = (v: string) => (v.trim() === "" ? null : Math.max(0, Number(v)) || null);
-  const areaKey = [s.city.trim().toLowerCase(), s.state.trim().toUpperCase(), s.zip.trim(), s.homeType].join("|");
+  const places = (move?.places ?? []).filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
+  const nearId = s.nearPlaceId ?? (place && places.some((p) => p.id === place.id) ? place.id : "city");
+  const center = places.find((p) => p.id === nearId) ?? null;
+  const centerArea = center ? cityStateFromAddress(center.address) : null;
+  const mode = s.radiusMode ?? "miles";
+  const radiusMiles = s.radiusMiles === undefined ? (center ? 20 : null) : s.radiusMiles;
+  const maxMinutes = s.maxMinutes ?? 30;
+  const radius = searchRadiusMiles({ radiusMode: mode, radiusMiles, maxMinutes });
+  const seed = centerArea ?? { city: s.city, state: s.state };
+  const within = mode === "minutes" ? `${maxMinutes} min` : radiusMiles ? `${radiusMiles} mi` : "";
+  const areaKey = [center?.id ?? "", seed.city.trim().toLowerCase(), seed.state.trim().toUpperCase(), center ? "" : s.zip.trim(), s.homeType, radius ? `${mode}:${mode === "minutes" ? maxMinutes : radiusMiles}` : ""].join("|");
+  const towns = useMemo(() => {
+    const n = new Map<string, number>();
+    for (const r of found?.results ?? []) if (r.city) n.set(r.city, (n.get(r.city) ?? 0) + 1);
+    return [...n].sort((a, b) => b[1] - a[1]);
+  }, [found]);
 
   const savedUrls = useMemo(() => new Map(db.apartments.filter((a) => a.listing_url).map((a) => [a.listing_url, a.id])), [db.apartments]);
   const results = (() => {
     if (!found) return [];
     const want = s.homeType === "apartment" ? ["apartment", "condo"] : s.homeType === "townhome" ? ["townhouse"] : s.homeType === "house" ? ["house"] : null;
-    const list = filterRentals(found.results, s).filter((r) => !hidden.includes(r.id) && (!want || want.includes(r.homeType)) && (!cityOnly || !s.city.trim() || r.city.toLowerCase() === s.city.trim().toLowerCase()));
+    const list = filterRentals(found.results, s).filter((r) => !hidden.includes(r.id) && (!want || want.includes(r.homeType)) &&     (!town || r.city === town));
     const price = (r: RentalResult) => rentalBestPlan(r, s)?.priceMin ?? r.priceMin ?? 9e9;
     const priceHigh = (r: RentalResult) => rentalBestPlan(r, s)?.priceMin ?? r.priceMin ?? -1;
-    const miles = (r: RentalResult) => distanceToPlace({ latitude: r.lat, longitude: r.lng }, place)?.miles ?? 9e9;
-    const score = (r: RentalResult) => mustHaveScore(r, s.mustHaves);
-    return [...list].sort((a, b) =>
-      sortBy === "price" ? price(a) - price(b) : sortBy === "price-desc" ? priceHigh(b) - priceHigh(a) : sortBy === "distance" ? miles(a) - miles(b) : sortBy === "size" ? (b.sqftMax ?? 0) - (a.sqftMax ?? 0) : score(b) - score(a) || price(a) - price(b),
+        const miles = (r: RentalResult) => r.miles ?? distanceToPlace({ latitude: r.lat, longitude: r.lng }, place)?.miles ?? 9e9;
+        const mins = (r: RentalResult) => r.minutes ?? 9e9;
+        const score = (r: RentalResult) => mustHaveScore(r, s.mustHaves);
+        return [...list].sort((a, b) =>
+          sortBy === "price" ? price(a) - price(b) : sortBy === "price-desc" ? priceHigh(b) - priceHigh(a) : sortBy === "distance" ? miles(a) - miles(b) : sortBy === "commute" ? mins(a) - mins(b) || miles(a) - miles(b) : sortBy === "size" ? (b.sqftMax ?? 0) - (a.sqftMax ?? 0) : score(b) - score(a) || price(a) - price(b),
     );
   })();
 
@@ -72,11 +92,19 @@ export function FindRentals({ api }: { api: CrudApi<"apartments"> }) {
     setError("");
     setShown(PAGE);
     try {
-      const q = new URLSearchParams({ city: s.city, state: s.state, zip: s.zip, type: s.homeType });
+      const q = new URLSearchParams({ city: seed.city, state: seed.state, zip: center ? "" : s.zip, type: s.homeType });
+      if (radius) q.set("radius", String(Math.round(radius)));
+      if (radius && mode === "minutes") q.set("minutes", String(maxMinutes));
+      if (center) {
+        q.set("lat", String(center.lat));
+        q.set("lng", String(center.lng));
+      }
       const res = await fetch(`/api/rentals?${q}`);
-      const body = (await res.json()) as { results?: RentalResult[]; error?: string };
+      const body = (await res.json().catch(() => ({ error: "The search took too long — try a smaller radius." }))) as       { results?: RentalResult[]; searched?: string[]; partial?: boolean; error?: string };
       if (!res.ok || !body.results) throw new Error(body.error || "Search failed — try again.");
-      setFound({ at: new Date().toISOString(), key: areaKey, results: body.results });
+            setFound({ at: new Date().toISOString(), key: areaKey, results: body.results, searched: body.searched, around: center?.label, partial: body.partial });
+      setTown("");
+      if (center && sortBy === "match") setSortBy(mode === "minutes" ? "commute" : "match");
       setOpen(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Search failed — try again.");
@@ -108,7 +136,8 @@ export function FindRentals({ api }: { api: CrudApi<"apartments"> }) {
 
   const links = apartmentSearchLinks(s);
   const rentLabel = s.minRent && s.maxRent ? `${formatMoney(s.minRent)}–${formatMoney(s.maxRent)}` : s.maxRent ? `≤ ${formatMoney(s.maxRent)}` : s.minRent ? `${formatMoney(s.minRent)}+` : "";
-  const summary = [s.city ? `${s.city}${s.state ? `, ${s.state}` : ""}` : s.zip, s.beds ? `${s.beds}+ bd` : "", rentLabel, s.homeType !== "any" ? s.homeType : ""].filter(Boolean).join(" · ");
+  const where = center ? `${within ? `${within} of ` : "Near "}${center.label}` : `${s.city ? `${s.city}${s.state ? `, ${s.state}` : ""}` : s.zip}${within ? ` + ${within}` : ""}`;
+  const summary = [where, s.beds ? `${s.beds}+ bd` : "", rentLabel, s.homeType !== "any" ? s.homeType : ""].filter(Boolean).join(" · ");
   const stale = found && found.key !== areaKey;
 
   return (
@@ -124,18 +153,96 @@ export function FindRentals({ api }: { api: CrudApi<"apartments"> }) {
       {open && (
         <div className="space-y-3 border-t border-gray-100 px-5 py-4">
           <label className="block text-xs font-semibold text-gray-500">
-            City
-            <input className="input mt-1" value={s.city} onChange={(e) => set({ city: e.target.value })} placeholder="Germantown" />
+            Search around
+            <select className="input mt-1" value={nearId} onChange={(e) => set({ nearPlaceId: e.target.value })}>
+              {places.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.primary ? "★ " : ""}
+                  {p.label}
+                </option>
+              ))}
+              <option value="city">A city or ZIP</option>
+            </select>
           </label>
-          <div className="grid grid-cols-2 gap-2">
-            <label className="text-xs font-semibold text-gray-500">
-              State
-              <input className="input mt-1 uppercase" maxLength={2} value={s.state} onChange={(e) => set({ state: e.target.value.toUpperCase() })} placeholder="TN" />
-            </label>
-            <label className="text-xs font-semibold text-gray-500">
-              or ZIP
-              <input className="input mt-1" inputMode="numeric" maxLength={5} value={s.zip} onChange={(e) => set({ zip: e.target.value.replace(/\D/g, "") })} placeholder="38138" />
-            </label>
+          {center && (
+            <p className="-mt-1 truncate text-xs text-gray-500">
+              📍 {center.address}
+            </p>
+          )}
+          {!places.length && <p className="-mt-1 text-xs text-gray-500">Tip: add his job under “Your places” to search by commute.</p>}
+          {(!center || !centerArea) && (
+            <>
+              <label className="block text-xs font-semibold text-gray-500">
+                {center ? "Nearest city (we couldn't read it from the address)" : "City"}
+                <input className="input mt-1" value={s.city} onChange={(e) => set({ city: e.target.value })} placeholder="Germantown" />
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="text-xs font-semibold text-gray-500">
+                  State
+                  <input className="input mt-1 uppercase" maxLength={2} value={s.state} onChange={(e) => set({ state: e.target.value.toUpperCase() })} placeholder="TN" />
+                </label>
+                {!center && (
+                  <label className="text-xs font-semibold text-gray-500">
+                    or ZIP
+                    <input className="input mt-1" inputMode="numeric" maxLength={5} value={s.zip} onChange={(e) => set({ zip: e.target.value.replace(/\D/g, "") })} placeholder="38138" />
+                  </label>
+                )}
+              </div>
+            </>
+          )}
+          <div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-semibold text-gray-500">Within</span>
+              <div className="grid grid-cols-2 gap-0.5 rounded-full bg-ink/[0.06] p-0.5" role="radiogroup" aria-label="Distance or drive time">
+                {(
+                  [
+                    ["miles", "Miles"],
+                    ["minutes", "Drive time"],
+                  ] as const
+                ).map(([m, label]) => (
+                  <button
+                    key={m}
+                    type="button"
+                    role="radio"
+                    aria-checked={mode === m}
+                    className={`seg-btn min-h-8 rounded-full px-3 text-xs font-semibold transition ${mode === m ? "bg-white text-ink shadow-sm" : "text-gray-600"}`}
+                    onClick={() => set({ radiusMode: m })}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {mode === "miles" && !center && (
+                <button type="button" aria-pressed={!radiusMiles} className={`min-h-9 rounded-full px-3 text-xs font-semibold ${!radiusMiles ? "bg-ink text-white" : "bg-gray-100 text-gray-600"}`} onClick={() => set({ radiusMiles: null })}>
+                  Just this city
+                </button>
+              )}
+              {(mode === "miles" ? RADIUS_MILES : COMMUTE_MINUTES).map((n) => {
+                const on = mode === "miles" ? radiusMiles === n : maxMinutes === n;
+                return (
+                  <button
+                    key={n}
+                    type="button"
+                    aria-pressed={on}
+                    className={`min-h-9 rounded-full px-3 text-xs font-semibold ${on ? "bg-ink text-white" : "bg-gray-100 text-gray-600"}`}
+                    onClick={() => set(mode === "miles" ? { radiusMiles: n } : { maxMinutes: n })}
+                  >
+                    {n} {mode === "miles" ? "mi" : "min"}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-1.5 text-xs text-gray-500">
+              {mode === "minutes"
+                ? center
+                  ? `Real driving times from ${center.label} — every town in range, across state lines too.`
+                  : "Drive time is from the middle of the city. Pick one of your places for exact commutes."
+                : radiusMiles
+                  ? `Every town within ${radiusMiles} miles${center ? ` of ${center.label}` : ""}, across state lines too.`
+                  : "Only listings in this city."}
+            </p>
           </div>
           <div className="grid grid-cols-2 gap-2">
             <label className="text-xs font-semibold text-gray-500">
@@ -246,8 +353,8 @@ export function FindRentals({ api }: { api: CrudApi<"apartments"> }) {
       )}
 
       <div className="border-t border-gray-100 px-5 py-4">
-        <button type="button" className="btn-primary w-full" disabled={busy || (!s.city.trim() && !s.zip.trim())} onClick={search}>
-          {busy ? "Searching rentals…" : found && !stale ? "↻ Search again" : "🔎 Search rentals"}
+        <button type="button" className="btn-primary w-full"         disabled={busy || (!seed.city.trim() && (!!center || !s.zip.trim()))} onClick={search}>
+                  {busy ? (radius ? "Searching every town in range… (up to a minute)" : "Searching rentals…") : found && !stale ? "↻ Search again" : "🔎 Search rentals"}
         </button>
         {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
         {found && stale && !busy && <p className="mt-2 text-xs text-gray-500">You changed the area — search again to update the results.</p>}
@@ -256,13 +363,27 @@ export function FindRentals({ api }: { api: CrudApi<"apartments"> }) {
       {found && (
         <div className="border-t border-gray-100 px-5 py-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <div className="text-sm">
+            <div className="w-full text-sm">
               <b>{results.length}</b> <span className="text-gray-500">match{results.length === 1 ? "" : "es"} of {found.results.length} on Rent.com</span>
+              {found.searched && found.searched.length > 1 && (
+                <details className="mt-1 text-xs text-gray-500">
+                  <summary className="cursor-pointer">Searched {found.searched.length} towns{found.around ? ` around ${found.around}` : ""}</summary>
+                  <p className="mt-1">{found.searched.join(" · ")}</p>
+                </details>
+              )}
+              {found.partial && <p className="mt-1 text-xs text-amber-700">Some pages didn&apos;t load — search again in a few minutes for the full list.</p>}
             </div>
-            {s.city.trim() && (
-              <label className="flex min-h-11 items-center gap-2 text-sm">
-                <input type="checkbox" className="h-5 w-5 accent-ink" checked={cityOnly} onChange={(e) => setCityOnly(e.target.checked)} />
-                Only in {s.city.trim()}
+            {towns.length > 1 && (
+              <label className="flex items-center gap-1.5 text-sm text-gray-500">
+                Town
+                <select className="ios-popup max-w-[10rem] font-semibold text-ink" aria-label="Town" value={town} onChange={(e) => setTown(e.target.value)}>
+                  <option value="">All ({towns.length})</option>
+                  {towns.map(([t, n]) => (
+                    <option key={t} value={t}>
+                      {t} ({n})
+                    </option>
+                  ))}
+                </select>
               </label>
             )}
             <label className="flex items-center gap-1.5 text-sm text-gray-500">
@@ -292,7 +413,8 @@ export function FindRentals({ api }: { api: CrudApi<"apartments"> }) {
                 <option value="match">Best match</option>
                 <option value="price">Price: low to high</option>
                 <option value="price-desc">Price: high to low</option>
-                {place && <option value="distance">Closest</option>}
+                {(place || found.results.some((r) => r.miles != null)) && <option value="distance">Closest</option>}
+                {found.results.some((r) => r.minutes != null) && <option value="commute">Shortest drive</option>}
                 <option value="size">Biggest</option>
               </select>
             </label>
@@ -306,8 +428,8 @@ export function FindRentals({ api }: { api: CrudApi<"apartments"> }) {
                   key={r.id}
                   r={r}
                   s={s}
-                  miles={place ? (distanceToPlace({ latitude: r.lat, longitude: r.lng }, place)?.miles ?? null) : null}
-                  placeLabel={place?.label ?? ""}
+                  miles={r.miles ?? (place ? (distanceToPlace({ latitude: r.lat, longitude: r.lng }, place)?.miles ?? null) : null)}
+                  placeLabel={found.around ?? (r.miles != null ? `center of ${s.city || "search"}` : (place?.label ?? ""))}
                   savedId={savedUrls.get(r.url) ?? null}
                   saving={saving[r.id] ?? ""}
                   expanded={expanded === r.id}
@@ -420,7 +542,14 @@ function Result(props: {
         <div className="flex flex-wrap gap-1.5 text-xs">
           <span className="rounded-full bg-gray-100 px-2 py-1">{beds}</span>
           {sqft ? <span className="rounded-full bg-gray-100 px-2 py-1">{sqft.toLocaleString()} ft²</span> : null}
-          {miles != null && <span className="rounded-full bg-gray-100 px-2 py-1">{formatMiles(miles)} to {placeLabel}</span>}
+          {r.minutes != null ? (
+            <span className="rounded-full bg-sky-50 px-2 py-1 text-sky-800">
+              🚗 {r.driveBy === "estimate" ? "~" : ""}
+              {r.minutes} min{miles != null ? ` · ${formatMiles(miles)}` : ""} to {placeLabel}
+            </span>
+          ) : (
+            miles != null && <span className="rounded-full bg-gray-100 px-2 py-1">{formatMiles(miles)} to {placeLabel}</span>
+          )}
           {r.special && <span className="rounded-full bg-amber-100 px-2 py-1 text-amber-800">Special</span>}
         </div>
         {r.amenities.length > 0 && <div className="line-clamp-1 text-xs text-gray-500">{r.amenities.slice(0, 5).join(" · ")}</div>}

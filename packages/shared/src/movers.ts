@@ -1,6 +1,6 @@
 import type { Snapshot } from './csv';
 import { estimateBookWeightOz } from './bookselling';
-import type { Move, MoverQuote } from './types';
+import type { Item, Move, MoverQuote } from './types';
 
 /** Typical weight per item (lbs) by inventory category — used when an item isn't packed in a box. */
 export const CATEGORY_WEIGHT_LBS: Record<string, number> = {
@@ -49,6 +49,8 @@ export interface MoveSize {
   bedrooms: number;
   homeLabel: string;
   itemsToMove: number;
+  /** Items riding with the family in the car (not counted anywhere else here). */
+  inCarItems: number;
   boxes: number;
   booksToMove: number;
   /** Weight of the books being moved, packed (included in weightLbs on top of the household figure). */
@@ -73,9 +75,13 @@ export interface MoveSize {
 
 const isMoving = (d: string) => d === 'move' || d === 'store' || d === 'undecided';
 
-export function estimateMoveSize(db: Pick<Snapshot, 'rooms' | 'items' | 'boxes' | 'books'>): MoveSize {
+/** Items the movers will carry: going with us (or to storage / undecided) and not riding in our car. */
+export const isMoverItem = (i: Pick<Item, 'deleted' | 'disposition' | 'in_car'>) => !i.deleted && isMoving(i.disposition) && !i.in_car;
+
+export function estimateMoveSize(db: Pick<Snapshot, 'rooms' | 'items' | 'boxes' | 'books'>, opts: { basis?: 'auto' | 'inventory' } = {}): MoveSize {
   const rooms = db.rooms.filter((r) => !r.deleted);
-  const items = db.items.filter((i) => !i.deleted && isMoving(i.disposition));
+  const items = db.items.filter(isMoverItem);
+  const inCarItems = db.items.filter((i) => !i.deleted && isMoving(i.disposition) && i.in_car).reduce((a, i) => a + Math.max(1, i.quantity ?? 1), 0);
   const boxes = db.boxes.filter((b) => !b.deleted);
   const books = db.books.filter((b) => !b.deleted && isMoving(b.disposition));
   const roomName = new Map(rooms.map((r) => [r.id, r.name]));
@@ -123,9 +129,11 @@ export function estimateMoveSize(db: Pick<Snapshot, 'rooms' | 'items' | 'boxes' 
   const inventoryLbs = Math.round(lbs);
   // Books are added on top of the household figure: a typical-home estimate doesn't account for a big library.
   const otherLbs = Math.round(lbs - bookLbs);
-  const basis = otherLbs >= typicalLbs ? 'inventory' : 'typical';
-  const weightLbs = Math.round(Math.max(otherLbs, typicalLbs) + bookLbs);
-  const cubicFeet = Math.round(Math.max(otherLbs, typicalLbs) / LBS_PER_CUFT + bookLbs / BOOK_LBS_PER_CUFT);
+  // Downsizing households can size the move from their inventory alone instead of the house size.
+  const basis = otherLbs >= typicalLbs || (opts.basis === 'inventory' && otherLbs > 0) ? 'inventory' : 'typical';
+  const baseLbs = basis === 'inventory' ? otherLbs : typicalLbs;
+  const weightLbs = Math.round(baseLbs + bookLbs);
+  const cubicFeet = Math.round(baseLbs / LBS_PER_CUFT + bookLbs / BOOK_LBS_PER_CUFT);
   const truck = cubicFeet <= 380 ? '10-ft truck' : cubicFeet <= 760 ? '15-ft truck' : cubicFeet <= 1010 ? '20-ft truck' : cubicFeet <= 1680 ? '26-ft truck' : '26-ft truck + trailer, or full-service';
 
   return {
@@ -133,6 +141,7 @@ export function estimateMoveSize(db: Pick<Snapshot, 'rooms' | 'items' | 'boxes' 
     bedrooms,
     homeLabel: rooms.length ? sizeRow[1] : '—',
     itemsToMove: count,
+    inCarItems,
     boxes: boxes.length,
     booksToMove: books.length,
     bookLbs: Math.round(bookLbs),
@@ -294,52 +303,154 @@ export const MOVER_QUESTIONS = [
   'Do you need a 2nd truck or shuttle if a semi can’t reach the new address?',
   'Can storage-in-transit be added if the apartment isn’t ready?',
   'How are claims for damage handled and how long do they take?',
+  'Is a holiday-season move (late December / early January) priced differently, and do you have availability then?',
+  'Can you guarantee delivery by our deadline in writing?',
+  'Does a flexible load window lower the price?',
+  'Will our things be on a dedicated truck or consolidated with other shipments?',
+  'Are your crews your own employees, or subcontracted?',
+  'If our final inventory ends up smaller than this list, will the price go down?',
+  'Is packing material included, or charged separately?',
+  'Are fuel surcharges, tolls and long-distance fees included in the price?',
 ];
+
+/** Questions ticked by default in the quote email (indexes into MOVER_QUESTIONS). */
+export const DEFAULT_EMAIL_QUESTIONS = [0, 1, 2, 3, 5, 10, 11, 15];
+
+export const PLEASE_INCLUDE = [
+  'Total price and estimate type (binding / not-to-exceed)',
+  'Your USDOT and MC numbers',
+  'Valuation options and cost (full value protection)',
+  'Deposit amount and payment terms',
+  'Pickup and delivery windows',
+  'Any extra charges (stairs, long carry, shuttle, bulky items)',
+];
+
+export type QuoteSection =
+  | 'details'
+  | 'size'
+  | 'books'
+  | 'special'
+  | 'fragile'
+  | 'highValue'
+  | 'notes'
+  | 'itemList'
+  | 'attachment'
+  | 'pleaseInclude'
+  | 'questions'
+  | 'walkthrough'
+  | 'emailOnly';
+
+export const QUOTE_SECTIONS: { key: QuoteSection; label: string; on: boolean }[] = [
+  { key: 'details', label: 'Move details (from, to, dates, home)', on: true },
+  { key: 'notes', label: 'Our notes', on: true },
+  { key: 'size', label: 'Size & weight estimate', on: true },
+  { key: 'books', label: 'Books', on: true },
+  { key: 'special', label: 'Bulky / special items', on: true },
+  { key: 'fragile', label: 'Fragile item count', on: true },
+  { key: 'highValue', label: 'High-value items', on: true },
+  { key: 'attachment', label: 'Mention the attached inventory PDF', on: true },
+  { key: 'itemList', label: 'Full item list in the email body', on: false },
+  { key: 'pleaseInclude', label: '“Please include in your quote” list', on: true },
+  { key: 'questions', label: 'Questions', on: true },
+  { key: 'walkthrough', label: 'Offer a video walk-through', on: true },
+  { key: 'emailOnly', label: 'Ask them to reply by email only (no phone number)', on: true },
+];
+
+export interface QuoteListItem {
+  room: string;
+  name: string;
+  qty: number;
+  note?: string;
+}
+
+export interface QuoteRequestOptions {
+  name?: string;
+  phone?: string;
+  email?: string;
+  method?: string;
+  sections?: Partial<Record<QuoteSection, boolean>>;
+  /** Replaces the load date line, e.g. "Flexible — anytime from …". */
+  loadWindow?: string;
+  /** Replaces the delivery date line. */
+  deliveryWindow?: string;
+  notes?: string[];
+  questions?: string[];
+  pleaseInclude?: string[];
+  items?: QuoteListItem[];
+}
 
 const fmtDate = (d: string | null) => (d ? new Date(d + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) : 'flexible');
 
+/** Items grouped by room, one line per room — compact enough for an email body. */
+export function itemListLines(items: QuoteListItem[]): string[] {
+  const rooms = new Map<string, QuoteListItem[]>();
+  for (const i of items) rooms.set(i.room, [...(rooms.get(i.room) ?? []), i]);
+  return [...rooms].map(([room, list]) => `• ${room}: ${list.map((i) => `${i.name}${i.qty > 1 ? ` ×${i.qty}` : ''}`).join(', ')}`);
+}
+
 /** A ready-to-send quote request with everything a mover needs to price the job. */
-export function quoteRequestText(move: Move | undefined, size: MoveSize, opts: { name?: string; phone?: string; email?: string; method?: string } = {}): { subject: string; body: string } {
+export function quoteRequestText(move: Move | undefined, size: MoveSize, opts: QuoteRequestOptions = {}): { subject: string; body: string } {
+  const on = (k: QuoteSection) => opts.sections?.[k] ?? QUOTE_SECTIONS.find((s) => s.key === k)!.on;
   const from = move ? [move.from_city, move.from_state, move.from_zip].filter(Boolean).join(', ') : '';
   const to = move ? [move.to_city, move.to_state, move.to_zip].filter(Boolean).join(', ') : '';
   const method =
     opts.method ?? (move?.moving_method === 'self_pack' ? 'loading, transport and unloading (we will pack)' : move?.moving_method === 'container' ? 'a portable container' : 'full-service packing, loading, transport and unloading');
+  const notes = (opts.notes ?? []).map((n) => n.trim()).filter(Boolean);
+  const questions = opts.questions ?? DEFAULT_EMAIL_QUESTIONS.map((i) => MOVER_QUESTIONS[i]!);
+  const include = opts.pleaseInclude ?? PLEASE_INCLUDE;
+  const items = opts.items ?? [];
+  const emailOnly = on('emailOnly');
+  const section = (title: string, rows: string[]) => (rows.length ? ['', title, ...rows] : []);
+
+  const sizeRows = [
+    ...(on('size')
+      ? [
+          `• About ${size.weightLbs.toLocaleString()} lbs / ${size.cubicFeet.toLocaleString()} cu ft${size.basis === 'inventory' ? ' (from our itemized inventory of what is actually coming)' : ''}`,
+          `• ${size.itemsToMove} items${size.boxes ? `, ${size.boxes} boxes` : ''}${size.booksToMove ? `, ${size.booksToMove} books` : ''}`,
+        ]
+      : []),
+    ...(on('books') && size.bookLbs ? [`• Books: ${size.booksToMove.toLocaleString()} books ≈ ${size.bookLbs.toLocaleString()} lbs${on('size') ? ' (included above)' : ''}${size.bookBoxesNeeded ? ` — about ${size.bookBoxesNeeded} small book boxes` : ''}`] : []),
+    ...(on('special') && size.specialItems.length ? [`• Bulky / special items: ${size.specialItems.join(', ')}`] : []),
+    ...(on('fragile') && size.fragileItems ? [`• ${size.fragileItems} fragile items`] : []),
+    ...(on('highValue') && size.highValueItems.length ? [`• High-value items: ${size.highValueItems.slice(0, 6).map((h) => h.name).join(', ')}`] : []),
+  ];
+
   const lines = [
     'Hello,',
     '',
     `We're moving long-distance and would like a written ${move?.moving_method === 'container' ? 'quote' : 'binding (or binding not-to-exceed) estimate'} for ${method}.`,
+    ...section(
+      'MOVE DETAILS',
+      on('details')
+        ? [
+            `• From: ${from || '—'}${move?.distance_miles ? `  (${move.distance_miles.toLocaleString()} driving miles)` : ''}`,
+            `• To: ${to || '—'}`,
+            `• Load date: ${opts.loadWindow?.trim() || fmtDate(move?.load_date ?? move?.move_date ?? null)}`,
+            `• Delivery needed by: ${opts.deliveryWindow?.trim() || fmtDate(move?.delivery_date ?? null)}`,
+            `• Home: ${size.homeLabel}${size.rooms ? `, ${size.rooms} rooms` : ''}${move?.to_tenure === 'rent' ? ' → moving into a rental' : ''}`,
+          ]
+        : [],
+    ),
+    ...(on('notes') && notes.length ? ['', 'PLEASE NOTE', ...notes.map((n) => `• ${n}`)] : []),
+    ...section('SIZE (from our inventory)', sizeRows),
+    ...(on('attachment') ? ['', `📎 Attached is an itemized inventory (PDF) of everything we need moved${items.length ? ` — ${items.reduce((a, i) => a + i.qty, 0)} items` : ''}, room by room.`] : []),
+    ...(on('itemList') && items.length ? section('ITEMS TO MOVE', itemListLines(items)) : []),
+    ...(on('pleaseInclude') ? section('PLEASE INCLUDE IN YOUR QUOTE', include.map((s) => `• ${s}`)) : []),
+    ...(on('questions') ? section('QUESTIONS', questions.map((q, i) => `${i + 1}. ${q}`)) : []),
     '',
-    'MOVE DETAILS',
-    `• From: ${from || '—'}${move?.distance_miles ? `  (${move.distance_miles.toLocaleString()} driving miles)` : ''}`,
-    `• To: ${to || '—'}`,
-    `• Load date: ${fmtDate(move?.load_date ?? move?.move_date ?? null)}`,
-    `• Delivery needed by: ${fmtDate(move?.delivery_date ?? null)}`,
-    `• Home: ${size.homeLabel}${size.rooms ? `, ${size.rooms} rooms` : ''}${move?.to_tenure === 'rent' ? ' → moving into a rental' : ''}`,
-    '',
-    'SIZE (from our inventory)',
-    `• About ${size.weightLbs.toLocaleString()} lbs / ${size.cubicFeet.toLocaleString()} cu ft`,
-    `• ${size.itemsToMove} logged items${size.boxes ? `, ${size.boxes} boxes` : ''}${size.booksToMove ? `, ${size.booksToMove} books` : ''}`,
-    ...(size.bookLbs ? [`• Books: ${size.booksToMove.toLocaleString()} books ≈ ${size.bookLbs.toLocaleString()} lbs (included above)${size.bookBoxesNeeded ? ` — about ${size.bookBoxesNeeded} small book boxes` : ''}`] : []),
-    ...(size.specialItems.length ? [`• Bulky / special items: ${size.specialItems.join(', ')}`] : []),
-    ...(size.fragileItems ? [`• ${size.fragileItems} fragile items`] : []),
-    ...(size.highValueItems.length ? [`• High-value items: ${size.highValueItems.slice(0, 6).map((h) => h.name).join(', ')}`] : []),
-    '',
-    'PLEASE INCLUDE',
-    '• Total price and estimate type (binding / not-to-exceed)',
-    '• Your USDOT and MC numbers',
-    '• Valuation options and cost (full value protection)',
-    '• Deposit amount and payment terms',
-    '• Pickup and delivery windows',
-    '• Any extra charges (stairs, long carry, shuttle, bulky items)',
-    '',
-    "We're happy to do a video walk-through. A full room-by-room inventory is available on request.",
+    [
+      on('walkthrough') ? "We're happy to do a video walk-through." : '',
+      emailOnly ? 'Please reply by email only — we are not taking phone calls about this move.' : '',
+    ]
+      .filter(Boolean)
+      .join(' '),
     '',
     'Thank you,',
     opts.name || '',
-    [opts.phone, opts.email].filter(Boolean).join(' · '),
+    (emailOnly ? [opts.email] : [opts.phone, opts.email]).filter(Boolean).join(' · '),
   ];
   return {
-    subject: `Moving quote request: ${move?.from_city || 'our home'} → ${move?.to_city || 'new city'}${move?.load_date || move?.move_date ? ` (${fmtDate(move?.load_date ?? move?.move_date ?? null)})` : ''}`,
+    subject: `Moving quote request: ${move?.from_city || 'our home'} → ${move?.to_city || 'new city'}${opts.loadWindow?.trim() ? ' (flexible dates)' : move?.load_date || move?.move_date ? ` (${fmtDate(move?.load_date ?? move?.move_date ?? null)})` : ''}`,
     body: lines.join('\n').replace(/\n{3,}/g, '\n\n').trim(),
   };
 }

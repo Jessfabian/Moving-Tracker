@@ -224,6 +224,8 @@ export interface Item extends BaseRow {
   /** Shopping / product page it came from. */
   product_url: string;
   fragile: boolean;
+  /** Riding with us in the car — left off the mover inventory and size estimate. */
+  in_car?: boolean;
   photos: MediaRef[];
   notes: string;
 }

@@ -34,9 +34,9 @@ async function toJpeg(bytes: ArrayBuffer, mime: string): Promise<ArrayBuffer> {
   return blob.arrayBuffer();
 }
 
-const ascii = (s: string) => s.replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/[–—]/g, "-").replace(/…/g, "...").replace(/[^\x20-\x7E]/g, "");
+export const ascii = (s: string) => s.replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/[–—]/g, "-").replace(/…/g, "...").replace(/[^\x20-\x7E]/g, "");
 
-function wrap(text: string, font: PDFFont, size: number, width: number): string[] {
+export function wrap(text: string, font: PDFFont, size: number, width: number): string[] {
   const out: string[] = [];
   let line = "";
   for (const w of ascii(text).split(/\s+/)) {

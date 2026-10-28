@@ -6,16 +6,16 @@ import {
   formatMoney,
   MOVER_DIRECTORY,
   MOVER_QUESTIONS,
-  quoteRequestText,
+  type Item,
   type MethodEstimate,
   type MoverDirectoryEntry,
   type MoveSize,
 } from "@moving/shared";
-import { useState, useSyncExternalStore } from "react";
 import { printHtml } from "@/lib/media";
 import Link from "next/link";
 import { useSupplies } from "@/components/PackingSupplies";
 import { InstantQuoteCard } from "./InstantQuote";
+import { QuoteEmail, useEmailPrefs } from "./QuoteEmail";
 import { useDb, useStore } from "@/lib/store-context";
 
 type Db = ReturnType<typeof useDb>;
@@ -29,8 +29,8 @@ const KIND_LABELS: Record<MoverDirectoryEntry["kind"], { label: string; icon: st
 
 export const fmcsaSearchUrl = (name: string) => `https://safer.fmcsa.dot.gov/keywordx.asp?searchstring=${encodeURIComponent(`*${name.toUpperCase()}*`)}&SEARCHTYPE=`;
 
-export function moveEstimates(db: Db) {
-  const size = estimateMoveSize(db);
+export function moveEstimates(db: Db, downsizing = false) {
+  const size = estimateMoveSize(db, { basis: downsizing ? "inventory" : "auto" });
   const miles = db.moves[0]?.distance_miles ?? 0;
   const estimates = estimateMoveCosts(size, miles);
   return { size, miles, estimates };
@@ -42,29 +42,6 @@ export function methodFor(estimates: MethodEstimate[], movingMethod: string | un
   return estimates.find((e) => e.method === m);
 }
 
-function contactFor(db: Db) {
-  const people = db.family_members.filter((m) => m.relationship === "self" || m.relationship === "spouse").sort((a, b) => (a.relationship === "self" ? 0 : 1) - (b.relationship === "self" ? 0 : 1));
-  const self = people[0];
-  return {
-    name: people.map((p) => p.name).filter(Boolean).join(" & ") || undefined,
-    phone: people.map((p) => p.phone ?? "").find(Boolean) || undefined,
-    email: self?.email || people.map((p) => p.email ?? "").find(Boolean) || undefined,
-  };
-}
-
-const QKEY = "moving-tracker.mover-questions";
-const qListeners = new Set<() => void>();
-const subscribeQuestions = (cb: () => void) => {
-  qListeners.add(cb);
-  window.addEventListener("storage", cb);
-  return () => {
-    qListeners.delete(cb);
-    window.removeEventListener("storage", cb);
-  };
-};
-const readQuestions = () => localStorage.getItem(QKEY) ?? "[]";
-const serverQuestions = () => "[]";
-
 const esc = (s: unknown) =>
   String(s ?? "")
     .replace(/&/g, "&amp;")
@@ -72,11 +49,10 @@ const esc = (s: unknown) =>
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 
-function packetHtml(db: Db, size: MoveSize, estimates: MethodEstimate[], request: { subject: string; body: string }) {
+function packetHtml(db: Db, size: MoveSize, estimates: MethodEstimate[], request: { subject: string; body: string }, moving: Item[]) {
   const move = db.moves[0];
   const rooms = db.rooms.filter((r) => !r.deleted);
   const roomName = new Map(rooms.map((r) => [r.id, r.name]));
-  const moving = db.items.filter((i) => !i.deleted && ["move", "store", "undecided"].includes(i.disposition));
   const groups = new Map<string, typeof moving>();
   for (const i of moving) {
     const k = (i.room_id && roomName.get(i.room_id)) || "Unassigned";
@@ -138,25 +114,10 @@ export function QuoteKit({ onCompare }: { onCompare: () => void }) {
   const db = useDb();
   const store = useStore();
   const move = db.moves[0];
-  const { size, miles, estimates } = moveEstimates(db);
+  const [prefs, setPrefs] = useEmailPrefs(db);
+  const { size, miles, estimates } = moveEstimates(db, prefs.downsizing);
   const supplies = useSupplies();
-  const contact = contactFor(db);
-  const request = quoteRequestText(move, size, contact);
-  const [copied, setCopied] = useState(false);
-  const checkedRaw = useSyncExternalStore(subscribeQuestions, readQuestions, serverQuestions);
-  const checked = new Set<number>(JSON.parse(checkedRaw) as number[]);
-  const toggleQuestion = (i: number) => {
-    const next = new Set(checked);
-    if (next.has(i)) next.delete(i);
-    else next.add(i);
-    localStorage.setItem(QKEY, JSON.stringify([...next]));
-    qListeners.forEach((l) => l());
-  };
-
   const quotes = db.quotes.filter((q) => !q.deleted);
-  const requestedEmails = [...new Set(quotes.filter((q) => q.status === "requested" && (q.email ?? "").trim()).map((q) => q.email.trim()))];
-  const mailto = (bcc?: string[]) =>
-    `mailto:?${bcc?.length ? `bcc=${encodeURIComponent(bcc.join(","))}&` : ""}subject=${encodeURIComponent(request.subject)}&body=${encodeURIComponent(request.body)}`;
   const inTracker = (name: string) => quotes.some((q) => q.company.trim().toLowerCase() === name.toLowerCase());
   const addToTracker = (m: MoverDirectoryEntry) => store.insert("quotes", { company: m.name, website: m.url, status: "requested", notes: m.note });
   const preferred = move?.moving_method;
@@ -290,58 +251,7 @@ export function QuoteKit({ onCompare }: { onCompare: () => void }) {
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
-        <div className="card">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="font-display text-xl font-bold tracking-tight">Quote request</h2>
-            <div className="flex flex-wrap gap-2">
-              <button
-                className="btn-secondary"
-                onClick={() => {
-                  void navigator.clipboard.writeText(`Subject: ${request.subject}\n\n${request.body}`);
-                  setCopied(true);
-                  setTimeout(() => setCopied(false), 1500);
-                }}
-              >
-                {copied ? "✓ Copied" : "📋 Copy"}
-              </button>
-              <a className="btn-secondary" href={mailto()}>
-                ✉️ Email
-              </a>
-              <a className={`btn-primary ${requestedEmails.length ? "" : "pointer-events-none opacity-50"}`} href={requestedEmails.length ? mailto(requestedEmails) : undefined} aria-disabled={!requestedEmails.length}>
-                📨 Email all requested ({requestedEmails.length})
-              </a>
-              <button className="btn-ghost" onClick={() => printHtml(packetHtml(db, size, estimates, request))}>
-                🖨️ Print quote packet
-              </button>
-            </div>
-          </div>
-          <p className="mt-1 text-xs text-gray-500">
-            Sent from {contact.name ?? "you"}
-            {contact.email ? ` · ${contact.email}` : " — add your email to Family (self) to sign it"}. “Email all requested” BCCs every quote marked <b>requested</b> that has an email.
-          </p>
-          <div className="mt-3 rounded-xl bg-sand/60 p-3 text-sm font-semibold">{request.subject}</div>
-          <pre className="mt-2 max-h-96 overflow-auto rounded-xl bg-ink/[0.03] p-3 font-sans text-sm leading-relaxed whitespace-pre-wrap">{request.body}</pre>
-        </div>
-        <div className="card">
-          <div className="flex items-center justify-between">
-            <h2 className="font-display text-xl font-bold tracking-tight">Ask every mover</h2>
-            <span className="chip bg-ink/5">
-              {checked.size}/{MOVER_QUESTIONS.length}
-            </span>
-          </div>
-          <ul className="mt-3 space-y-2">
-            {MOVER_QUESTIONS.map((q, i) => (
-              <li key={q}>
-                <label className="flex cursor-pointer gap-2.5 text-sm">
-                  <input type="checkbox" className="mt-0.5 h-4 w-4 flex-none" style={{ accentColor: "#0d0d0f" }} checked={checked.has(i)} onChange={() => toggleQuestion(i)} />
-                  <span className={checked.has(i) ? "text-gray-400 line-through" : ""}>{q}</span>
-                </label>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
+      <QuoteEmail size={size} prefs={prefs} setPrefs={setPrefs} onPrint={(request, items) => printHtml(packetHtml(db, size, estimates, request, items))} />
 
       <div>
         <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">

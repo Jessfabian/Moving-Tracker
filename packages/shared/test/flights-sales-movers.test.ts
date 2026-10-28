@@ -126,4 +126,59 @@ describe('mover quote kit', () => {
     expect(r.subject).toMatch(/Denver/);
     expect(r.body).toMatch(/Memphis/);
   });
+
+  it('leaves in-car items off the mover size', () => {
+    const withCar = {
+      ...db,
+      items: [...db.items, { id: 'c', name: 'Laptop', model: '', category: 'electronics', disposition: 'move', quantity: 2, room_id: 'r1', box_id: null, fragile: true, est_value: 1500, in_car: true }],
+    } as unknown as Snapshot;
+    const a = estimateMoveSize(db);
+    const b = estimateMoveSize(withCar);
+    expect(b.itemsToMove).toBe(a.itemsToMove);
+    expect(b.inventoryLbs).toBe(a.inventoryLbs);
+    expect(b.inCarItems).toBe(2);
+    expect(b.highValueItems.map((h) => h.name)).not.toContain('Laptop');
+  });
+
+  it('sizes from the inventory alone when downsizing', () => {
+    const big = { ...db, rooms: ['Bedroom 1', 'Bedroom 2', 'Bedroom 3', 'Bedroom 4', 'Bedroom 5'].map((name, i) => ({ id: `b${i}`, name })) } as unknown as Snapshot;
+    const typical = estimateMoveSize(big);
+    const lean = estimateMoveSize(big, { basis: 'inventory' });
+    expect(typical.basis).toBe('typical');
+    expect(lean.basis).toBe('inventory');
+    expect(lean.weightLbs).toBeLessThan(typical.weightLbs);
+  });
+
+  it('customizes the quote email: sections, notes, questions, email-only', () => {
+    const s = estimateMoveSize(db);
+    const move = { from_city: 'Georgetown', to_city: 'Germantown', load_date: '2026-12-28' } as never;
+    const def = quoteRequestText(move, s, { name: 'Sam', phone: '555-1234', email: 'sam@x.com' });
+    expect(def.body).not.toMatch(/555-1234/);
+    expect(def.body).toMatch(/reply by email only/);
+    expect(def.body).toMatch(/sam@x\.com/);
+    expect(def.body).toMatch(/Attached is an itemized inventory/);
+
+    const r = quoteRequestText(move, s, {
+      name: 'Sam',
+      phone: '555-1234',
+      loadWindow: 'Flexible — last week of December through January 4',
+      deliveryWindow: 'January 4–8 at the latest',
+      notes: ["It's a 5-bedroom home, but we're consolidating", ''],
+      questions: ['Custom question?'],
+      items: [
+        { room: 'Bedroom', name: 'Bed', qty: 1 },
+        { room: 'Bedroom', name: 'Lamp', qty: 2 },
+      ],
+      sections: { highValue: false, pleaseInclude: false, itemList: true, emailOnly: false },
+    });
+    expect(r.subject).toMatch(/flexible dates/);
+    expect(r.body).toMatch(/Load date: Flexible — last week of December/);
+    expect(r.body).toMatch(/Delivery needed by: January 4–8/);
+    expect(r.body).toMatch(/5-bedroom home, but we're consolidating/);
+    expect(r.body).toMatch(/1\. Custom question\?/);
+    expect(r.body).toMatch(/• Bedroom: Bed, Lamp ×2/);
+    expect(r.body).not.toMatch(/High-value/);
+    expect(r.body).not.toMatch(/PLEASE INCLUDE/);
+    expect(r.body).toMatch(/555-1234/);
+  });
 });

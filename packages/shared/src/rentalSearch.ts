@@ -30,6 +30,11 @@ export interface RentalResult {
   special: string;
   available: string;
   floorPlans: { beds: number | null; baths: number | null; priceMin: number | null; priceMax: number | null; sqftMin: number | null; sqftMax: number | null }[];
+  /** Distance from the search center (his job, or the searched city) — filled in by radius searches. */
+  miles?: number | null;
+  /** Drive time from the search center; `driveBy` says whether it's a real road route or an estimate. */
+  minutes?: number | null;
+  driveBy?: 'road' | 'estimate';
 }
 
 const STATES: Record<string, string> = {
@@ -75,18 +80,95 @@ const range = (text: string): [number | null, number | null] => {
 
 const TYPES: Record<string, Apartment['home_type']> = { APARTMENTS: 'apartment', APARTMENT: 'apartment', CONDO: 'condo', CONDOS: 'condo', TOWNHOME: 'townhouse', TOWNHOMES: 'townhouse', TOWNHOUSE: 'townhouse', TOWNHOUSES: 'townhouse', HOUSE: 'house', HOUSES: 'house', SINGLE_FAMILY: 'house' };
 
+function nextData(html: string): unknown {
+  const m = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
+  if (!m) return null;
+  try {
+    return JSON.parse(m[1]!);
+  } catch {
+    return null;
+  }
+}
+
+/** A nearby city Rent.com links to from a search page (distance is from that page's city). */
+export interface RentComNearby {
+  name: string;
+  state: string;
+  /** e.g. "/mississippi/olive-branch" */
+  path: string;
+  miles: number;
+}
+
+/** Listings plus the nearby cities and total count from one Rent.com search page. */
+export function parseRentComPage(html: string): { listings: RentalResult[]; nearby: RentComNearby[]; total: number | null } {
+  const data = nextData(html);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const loc = (data as any)?.props?.pageProps?.pageData?.location;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const near: any[] = loc?.seoLinks?.nearby?.cities ?? [];
+  const nearby = near
+    .map((c) => {
+      const path = /^(\/[a-z-]+\/[a-z0-9-]+?)-(?:apartments|houses|townhouses|condos)$/.exec(str(c?.url))?.[1];
+      const [name, state] = str(c?.displayName).split(/,\s*/);
+      return path && name ? { name, state: state ?? '', path, miles: num(c?.distanceInMiles) ?? 99 } : null;
+    })
+    .filter((c): c is RentComNearby => !!c);
+  return { listings: listingsOf(loc?.listingSearch?.listings), nearby, total: num(loc?.listingSearch?.total) };
+}
+
+/** "/tennessee/germantown" for a city + state (null if the state is unknown). */
+export function rentComCityPath(city: string, state: string): string | null {
+  const st = STATES[state.trim().toUpperCase()];
+  return st && city.trim() ? `/${st}/${slug(city)}` : null;
+}
+
+export type RentComKind = 'apartments' | 'townhouses' | 'houses';
+
+export function rentComPageUrl(path: string, kind: RentComKind, page = 1): string {
+  return `https://www.rent.com${path}-${kind}${page > 1 ? `/page-${page}` : ''}`;
+}
+
+export function rentComKinds(homeType: ApartmentSearch['homeType']): RentComKind[] {
+  return homeType === 'house' ? ['houses'] : homeType === 'townhome' ? ['townhouses'] : homeType === 'apartment' ? ['apartments'] : ['apartments', 'townhouses', 'houses'];
+}
+
+/** City and state from a geocoded address like "1 Main St, Memphis, TN 38103, United States". */
+export function cityStateFromAddress(address: string): { city: string; state: string } | null {
+  const parts = address.split(',').map((p) => p.trim());
+  const stateOf = (p: string) => {
+    const abbr = /^([A-Z]{2})(?:\s+\d{5}(?:-\d{4})?)?$/.exec(p)?.[1];
+    if (abbr && STATES[abbr]) return abbr;
+    const name = slug(p.replace(/\s+\d{5}.*$/, ''));
+    return Object.keys(STATES).find((k) => STATES[k] === name) ?? null;
+  };
+  for (let i = parts.length - 1; i > 0; i--) {
+    const st = stateOf(parts[i]!);
+    if (!st) continue;
+    let j = i - 1;
+    // Skip "Shelby County" / ZIP-only parts between the city and the state.
+    while (j > 0 && (/county$/i.test(parts[j]!) || /^\d{5}$/.test(parts[j]!))) j--;
+    const city = parts[j]!;
+    if (city && !/^\d/.test(city)) return { city, state: st };
+  }
+  return null;
+}
+
+/** Straight-line radius to gather listings from: a drive-time limit becomes a generous miles cap, then gets checked by road. */
+export function searchRadiusMiles(s: Pick<ApartmentSearch, 'radiusMode' | 'radiusMiles' | 'maxMinutes'>): number | null {
+  if (s.radiusMode === 'minutes') return s.maxMinutes ? Math.min(60, Math.max(4, s.maxMinutes * 0.8)) : null;
+  return s.radiusMiles ? Math.min(60, s.radiusMiles) : null;
+}
+
 /** Reads the listings embedded in a Rent.com search results page. */
 export function parseRentComSearch(html: string): RentalResult[] {
-  const m = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
-  if (!m) return [];
-  let data: unknown;
-  try {
-    data = JSON.parse(m[1]!);
-  } catch {
-    return [];
-  }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const listings: any[] = (data as any)?.props?.pageProps?.pageData?.location?.listingSearch?.listings ?? [];
+  return listingsOf((nextData(html) as any)?.props?.pageProps?.pageData?.location?.listingSearch?.listings);
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function listingsOf(raw: any): RentalResult[] {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const listings: any[] = Array.isArray(raw) ? raw : [];
   return listings
     .filter((l) => l && l.id && l.name && !l.offMarket)
     .map((l): RentalResult => {

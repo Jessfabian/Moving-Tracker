@@ -6,6 +6,7 @@ import { CrudPage, StatusPill } from "@/components/CrudPage";
 import { PageHeader, Segmented } from "@/components/ui";
 import { useDb, useStore } from "@/lib/store-context";
 import { methodFor, moveEstimates, QuoteKit } from "./QuoteKit";
+import { useEmailPrefs } from "./QuoteEmail";
 
 type Tab = "get" | "compare";
 
@@ -43,7 +44,8 @@ function Comparison() {
   const db = useDb();
   const store = useStore();
   const move = db.moves[0];
-  const { size, estimates } = moveEstimates(db);
+  const [prefs] = useEmailPrefs(db);
+  const { size, estimates } = moveEstimates(db, prefs.downsizing);
   const interstate = move?.from_state && move?.to_state ? move.from_state !== move.to_state : undefined;
   const ctxFor = (q: MoverQuote) => ({ estimateLow: methodFor(estimates, move?.moving_method, q.includes_packing)?.low, weightLbs: size.weightLbs, interstate });
   const quotes = db.quotes.filter((q) => !q.deleted && q.status !== "rejected").sort((a, b) => (a.price ?? Infinity) - (b.price ?? Infinity));
