@@ -1,9 +1,9 @@
 "use client";
 
 import { signedMediaUrl, type MediaRef } from "@moving/shared";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { compressImage } from "@/lib/media";
+import { compressImage, droppedImages, imageUrlToMedia } from "@/lib/media";
 import { useApp } from "@/lib/store-context";
 
 const cache = new Map<string, string>();
@@ -27,6 +27,30 @@ export function useMediaUrl(ref: MediaRef | undefined | null): string | null {
   if (ref.uri) return ref.uri;
   if (!path) return null;
   return cache.get(path) ?? (fetched?.path === path ? fetched.url : null);
+}
+
+/** Viewable URLs for a list of photos (local copies right away, cloud copies once signed). */
+export function useMediaUrls(refs: MediaRef[] | undefined | null): string[] {
+  const { supabase } = useApp();
+  const list = useMemo(() => (refs ?? []).filter((r) => (r.mime ?? "image/").startsWith("image/")), [refs]);
+  const need = list.filter((r) => !r.uri && r.remotePath && !cache.has(r.remotePath)).map((r) => r.remotePath!);
+  const needKey = need.join("|");
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!needKey || !supabase) return;
+    let live = true;
+    void Promise.all(
+      needKey.split("|").map((p) =>
+        signedMediaUrl(supabase, p).then((u) => {
+          if (u) cache.set(p, u);
+        }),
+      ),
+    ).then(() => live && setTick((t) => t + 1));
+    return () => {
+      live = false;
+    };
+  }, [needKey, supabase]);
+  return list.map((r) => r.uri ?? (r.remotePath ? cache.get(r.remotePath) : undefined)).filter((u): u is string => !!u);
 }
 
 export function MediaThumb({ media, className = "h-16 w-16", onClick }: { media: MediaRef; className?: string; onClick?: () => void }) {
@@ -115,8 +139,10 @@ export function MediaField({ value, onChange, accept = "image/*" }: { value: Med
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<MediaRef | null>(null);
+  const [over, setOver] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
 
-  const add = async (files: FileList | null) => {
+  const add = async (files: FileList | File[] | null) => {
     if (!files?.length) return;
     setBusy(true);
     try {
@@ -127,8 +153,41 @@ export function MediaField({ value, onChange, accept = "image/*" }: { value: Med
     }
   };
 
+  const take = async (dt: DataTransfer | null) => {
+    const { files, urls } = droppedImages(dt);
+    if (files.length) return add(files);
+    if (!urls.length) return setNote("Drop photos or images from a web page.");
+    setBusy(true);
+    setNote(`Saving ${urls.length} image${urls.length === 1 ? "" : "s"}…`);
+    const refs = (await Promise.all(urls.map(imageUrlToMedia))).filter((r): r is MediaRef => !!r);
+    onChange([...value, ...refs]);
+    setBusy(false);
+    setNote(refs.length < urls.length ? `Saved ${refs.length} of ${urls.length} — that site blocked the rest.` : null);
+  };
+
   return (
-    <div>
+    <div
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+        if (!over) setOver(true);
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(false);
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        setOver(false);
+        void take(e.dataTransfer);
+      }}
+      onPaste={(e) => {
+        const { files, urls } = droppedImages(e.clipboardData);
+        if (!files.length && !urls.length) return;
+        e.preventDefault();
+        void take(e.clipboardData);
+      }}
+      className={`rounded-xl transition ${over ? "bg-indigo-50 ring-2 ring-indigo-400 ring-offset-4" : ""}`}
+    >
       <div className="flex flex-wrap gap-2">
         {value.map((m) => (
           <div key={m.id} className="relative">
@@ -152,6 +211,7 @@ export function MediaField({ value, onChange, accept = "image/*" }: { value: Med
           {accept.includes("pdf") ? "File / PDF" : "Upload"}
         </button>
       </div>
+      <p className="mt-1.5 text-xs text-gray-400">{note ?? (over ? "Drop to add" : "Or drag & drop photos here")}</p>
       <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => void add(e.target.files).then(() => (e.target.value = ""))} />
       <input ref={fileRef} type="file" accept={accept} multiple className="hidden" onChange={(e) => void add(e.target.files).then(() => (e.target.value = ""))} />
       <MediaLightbox media={preview} onClose={() => setPreview(null)} />

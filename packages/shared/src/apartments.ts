@@ -10,10 +10,11 @@ export interface ApartmentCosts {
   perBedroom: number | null;
 }
 
-/** True monthly cost, cash needed to move in, and total cost over the first 12 months. */
+/** True monthly cost, cash needed to move in, and total cost over the first 12 months.
+ *  Pet rent / pet deposits are excluded: our pet is an ESA, so under the Fair Housing Act landlords can't charge them. */
 export function apartmentCosts(a: Partial<Apartment>): ApartmentCosts {
-  const monthly = n(a.rent) + n(a.pet_rent) + n(a.parking_fee) + n(a.utilities_est) + n(a.other_monthly);
-  const oneTime = n(a.deposit) + n(a.pet_deposit) + n(a.application_fee) + n(a.admin_fee) + n(a.broker_fee);
+  const monthly = n(a.rent) + n(a.parking_fee) + n(a.utilities_est) + n(a.other_monthly);
+  const oneTime = n(a.deposit) + n(a.application_fee) + n(a.admin_fee) + n(a.broker_fee);
   const moveIn = oneTime + monthly;
   const refundable = n(a.deposit);
   const firstYear = monthly * 12 + oneTime - refundable;
@@ -34,7 +35,7 @@ export function incomeNeeded(monthlyRent: number, ratio = 0.3) {
 export const APARTMENT_CHECKLIST: string[] = [
   'Verify the landlord / management company is legitimate (never wire money before touring)',
   'Ask what utilities are included and average monthly bills',
-  'Confirm pet policy, breed/weight limits, pet rent and deposits',
+  'Send the ESA letter with the application — no pet rent, pet deposit or pet fees can be charged for an emotional support animal (Fair Housing Act)',
   'Check cell signal and internet providers available',
   'Test water pressure, hot water, appliances, HVAC, windows and locks',
   'Look for signs of pests, mold, leaks or water damage',

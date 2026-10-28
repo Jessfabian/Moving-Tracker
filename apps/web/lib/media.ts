@@ -25,6 +25,34 @@ export async function readMedia(ref: MediaRef): Promise<Blob> {
   return (await fetch(ref.uri)).blob();
 }
 
+/** Downloads a web image (through our proxy, since most sites block cross-site reads) and saves it as our own photo. */
+export async function imageUrlToMedia(url: string): Promise<MediaRef | null> {
+  try {
+    const res = await fetch(`/api/image?url=${encodeURIComponent(url)}`);
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    if (!blob.type.startsWith("image/")) return null;
+    const name = decodeURIComponent(new URL(url).pathname.split("/").pop() || "photo.jpg").slice(0, 80);
+    return await compressImage(new File([blob], name, { type: blob.type }));
+  } catch {
+    return null;
+  }
+}
+
+/** Images (files or web image links) from a drop or paste event. */
+export function droppedImages(dt: DataTransfer | null): { files: File[]; urls: string[] } {
+  if (!dt) return { files: [], urls: [] };
+  const files = [...dt.files].filter((f) => f.type.startsWith("image/") || f.type === "application/pdf");
+  if (files.length) return { files, urls: [] };
+  const urls = new Set<string>();
+  for (const line of (dt.getData("text/uri-list") || "").split(/\r?\n/)) if (/^https?:\/\//i.test(line.trim())) urls.add(line.trim());
+  const html = dt.getData("text/html");
+  for (const m of html.matchAll(/<img[^>]+src=["']([^"']+)["']/gi)) if (/^https?:\/\//i.test(m[1]!)) urls.add(m[1]!);
+  const text = dt.getData("text/plain").trim();
+  if (!urls.size && /^https?:\/\/\S+\.(jpe?g|png|webp|gif|avif)(\?\S*)?$/i.test(text)) urls.add(text);
+  return { files: [], urls: [...urls].slice(0, 20) };
+}
+
 export function download(filename: string, content: string | Blob, type = "text/plain") {
   const blob = typeof content === "string" ? new Blob([content], { type }) : content;
   const url = URL.createObjectURL(blob);

@@ -23,6 +23,7 @@ import {
   incomeNeeded,
   maxAffordableRent,
   needsGeocode,
+  optionLabel,
   primaryPlace,
   uuid,
   type Apartment,
@@ -35,9 +36,11 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AddressInput } from "@/components/AddressInput";
 import { CrudPage, StatusPill, type CrudApi } from "@/components/CrudPage";
 import { Gallery } from "@/components/Gallery";
+import { useMediaUrls } from "@/components/Media";
 import { MapView, type MapLine, type MapPin } from "@/components/MapView";
-import { SchoolsPanel, SchoolsSection, ZoneChip, useKidLevels, useSchoolZone } from "./Schools";
+import { SchoolCard, SchoolsPanel, TopSchoolCell, ZoneChip, useKidLevels, useSchoolZone } from "./Schools";
 import { geocodeOne } from "@/lib/geo";
+import { useLocalState } from "@/lib/hooks";
 import { useDb, useStore } from "@/lib/store-context";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -229,11 +232,11 @@ function MapSection({ api }: { api: CrudApi<"apartments"> }) {
   const live = db.apartments.filter((a) => a.status !== "rejected");
   const located = live.filter((a) => apartmentLatLng(a));
   const { levels: kidLevels } = useKidLevels();
-  const [showSchools, setShowSchools] = useState(true);
-  const [levelPick, setLevel] = useState<SchoolLevel | null>(null);
+  const [showSchools, setShowSchools] = useLocalState("apt:schools", true);
+  const [levelPick, setLevel] = useLocalState<SchoolLevel | null>("apt:schoolLevel", null);
   const level = levelPick ?? kidLevels[0] ?? "E";
-  const [municipalOnly, setMunicipalOnly] = useState(false);
-  const [minGrade, setMinGrade] = useState("");
+  const [municipalOnly, setMunicipalOnly] = useLocalState("apt:municipalOnly", false);
+  const [minGrade, setMinGrade] = useLocalState("apt:minGrade", "");
   const [focusSchool, setFocusSchool] = useState<School | null>(null);
   const focusApt = located.find((a) => a.id === active) ?? located.find((a) => a.status === "signed") ?? located[0] ?? null;
   const focusLL = focusApt ? apartmentLatLng(focusApt) : null;
@@ -334,16 +337,15 @@ function MapSection({ api }: { api: CrudApi<"apartments"> }) {
         )}
       </div>
     </section>
+    {showSchools && focusSchool && (
+      <div className="mb-6">
+        <SchoolCard school={focusSchool} from={focusLL} fromName={focusApt?.name} onClose={() => setFocusSchool(null)} />
+      </div>
+    )}
     {showSchools && (
-      <SchoolsSection
-        apartments={located}
-        focusId={focusApt?.id ?? null}
-        setFocus={setActive}
-        level={level}
-        municipalOnly={municipalOnly}
-        focusSchool={focusSchool}
-        setFocusSchool={setFocusSchool}
-      />
+      <p className="-mt-3 mb-6 text-[11px] leading-relaxed text-gray-400">
+        Tap a rental pin to see its zoned schools, or a school pin for details. Zones: Shelby County School Site Locator · Schools: NCES {SCHOOLS_DATA_YEAR} · Grades: TN Dept. of Education {SCHOOLS_DATA_YEAR}. Zones change yearly — confirm with the district before signing.
+      </p>
     )}
     </>
   );
@@ -468,13 +470,19 @@ function Overview({ api }: { api: CrudApi<"apartments"> }) {
   );
 }
 
+function useAptPhotos(a: Apartment): string[] {
+  const saved = useMediaUrls(a.photos);
+  return useMemo(() => [...saved, ...(a.image_urls ?? [])], [saved, a.image_urls]);
+}
+
 function ApartmentCard({ a, open }: { a: Apartment; open: () => void }) {
   const db = useDb();
   const place = primaryPlace(db.moves[0]?.places);
   const d = distanceToPlace(a, place);
   const c = apartmentCosts(a);
   const fit = apartmentFit(a, db);
-  const cover = a.image_urls?.[0];
+  const photos = useAptPhotos(a);
+  const cover = photos[0];
   return (
     <button onClick={open} className="group flex h-full w-full flex-col overflow-hidden rounded-[1.75rem] border border-gray-200/80 bg-white text-left transition hover:-translate-y-0.5 hover:shadow-[0_24px_50px_-28px_rgba(13,13,15,0.5)]">
       <div className="relative aspect-[16/10] w-full overflow-hidden bg-gradient-to-br from-sand to-sky">
@@ -486,7 +494,7 @@ function ApartmentCard({ a, open }: { a: Apartment; open: () => void }) {
         <div className="absolute top-3 left-3 flex gap-1.5">
           <StatusPill value={a.status} options={APARTMENT_STATUSES} color={STATUS_COLORS[a.status]} />
         </div>
-        {(a.image_urls?.length ?? 0) > 1 && <span className="absolute top-3 right-3 rounded-full bg-ink/70 px-2 py-0.5 text-[11px] font-semibold text-white">{a.image_urls.length} photos</span>}
+        {photos.length > 1 && <span className="absolute top-3 right-3 rounded-full bg-ink/70 px-2 py-0.5 text-[11px] font-semibold text-white">{photos.length} photos</span>}
         {c.monthly > 0 && (
           <span className="absolute bottom-3 left-3 rounded-full bg-white px-3 py-1 font-display text-lg font-bold shadow">
             {formatMoney(c.monthly)}
@@ -505,7 +513,6 @@ function ApartmentCard({ a, open }: { a: Apartment; open: () => void }) {
         <div className="flex flex-wrap gap-1.5 text-xs">
           {(a.bedrooms != null || a.bathrooms != null) && <span className="rounded-full bg-gray-100 px-2 py-1">{a.bedrooms ?? "?"} bd · {a.bathrooms ?? "?"} ba</span>}
           {a.sqft ? <span className="rounded-full bg-gray-100 px-2 py-1">{a.sqft.toLocaleString()} ft²</span> : null}
-          {a.pets_allowed && <span className="rounded-full bg-gray-100 px-2 py-1">Pets ok</span>}
           {fit.verdict !== "unknown" && <span className={`rounded-full px-2 py-1 font-semibold ${FIT_STYLE[fit.verdict].cls}`}>{FIT_STYLE[fit.verdict].label}</span>}
           <ZoneChip a={a} />
         </div>
@@ -524,16 +531,74 @@ function ApartmentCard({ a, open }: { a: Apartment; open: () => void }) {
   );
 }
 
+function Fact({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="flex min-h-11 items-center justify-between gap-3 px-4 py-2 text-[15px]">
+      <span className="text-gray-500">{label}</span>
+      <span className="min-w-0 text-right font-medium break-words">{value}</span>
+    </div>
+  );
+}
+
 function Detail({ a }: { a: Apartment }) {
   const db = useDb();
+  const store = useStore();
   const c = apartmentCosts(a);
   const fit = apartmentFit(a, db);
   const place = primaryPlace(db.moves[0]?.places);
   const ll = apartmentLatLng(a);
   const { levels } = useKidLevels();
+  const photos = useAptPhotos(a);
+  const addr = apartmentAddress(a);
+  const facts: [string, ReactNode][] = (
+    [
+      ["Bed / bath", a.bedrooms != null || a.bathrooms != null ? `${a.bedrooms ?? "?"} bd · ${a.bathrooms ?? "?"} ba` : null],
+      ["Size", a.sqft ? `${a.sqft.toLocaleString()} ft²` : null],
+      ["Type", a.home_type && a.home_type !== "apartment" ? a.home_type : null],
+      ["Floor / unit", a.floor || null],
+      ["Lease", a.lease_months ? `${a.lease_months} months` : null],
+      ["Special", a.move_in_special || null],
+      ["Laundry", a.laundry && a.laundry !== "unknown" ? a.laundry.replace(/_/g, " ") : null],
+      ["Parking", a.parking && a.parking !== "unknown" ? a.parking : null],
+      ["Pets", "ESA — allowed, no pet fees"],
+      ["Available", a.available_date ? formatDate(a.available_date) : null],
+      ["Tour", a.tour_date ? formatDate(a.tour_date) : null],
+      ["Apply by", a.application_deadline ? formatDate(a.application_deadline) : null],
+      ["Commute", a.commute_minutes ? `${a.commute_minutes} min` : null],
+    ] as [string, ReactNode][]
+  ).filter(([, v]) => v != null && v !== "");
+  const costs: [string, number | null][] = (
+    [
+      ["Rent", a.rent],
+      ["Parking", a.parking_fee],
+      ["Utilities (est.)", a.utilities_est],
+      ["Other monthly", a.other_monthly],
+      ["Deposit", a.deposit],
+      ["Application fee", a.application_fee],
+      ["Admin fee", a.admin_fee],
+      ["Broker fee", a.broker_fee],
+    ] as [string, number | null][]
+  ).filter(([, v]) => v != null && v > 0);
   return (
     <div className="space-y-4">
-      {(a.image_urls?.length ?? 0) > 0 && <Gallery urls={a.image_urls} />}
+      {photos.length > 0 && <Gallery urls={photos} />}
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          aria-label="Status"
+          className="ios-popup font-semibold"
+          style={{ color: STATUS_COLORS[a.status] }}
+          value={a.status}
+          onChange={(e) => store.update("apartments", a.id, { status: e.target.value as Apartment["status"] })}
+        >
+          {APARTMENT_STATUSES.map((s) => (
+            <option key={s.value} value={s.value}>
+              {s.label}
+            </option>
+          ))}
+        </select>
+        {a.rating ? <span className="text-accent">{"★".repeat(a.rating)}</span> : null}
+        {addr && <span className="min-w-0 text-sm text-gray-500">{addr}</span>}
+      </div>
       {(c.monthly > 0 || c.moveIn > 0) && (
         <div className="grid grid-cols-3 gap-2 rounded-3xl bg-ink p-4 text-white">
           {[
@@ -541,9 +606,9 @@ function Detail({ a }: { a: Apartment }) {
             ["Move-in", c.moveIn],
             ["1st year", c.firstYear],
           ].map(([l, v]) => (
-            <div key={l as string}>
+            <div key={l as string} className="min-w-0">
               <div className="text-[11px] tracking-wide text-white/50 uppercase">{l}</div>
-              <div className="font-display text-xl font-bold">{formatMoney(v as number)}</div>
+              <div className="truncate font-display text-xl font-bold">{formatMoney(v as number)}</div>
             </div>
           ))}
           {fit.verdict !== "unknown" && (
@@ -555,17 +620,71 @@ function Detail({ a }: { a: Apartment }) {
           )}
         </div>
       )}
-      {ll && (
-        <div className="flex flex-wrap gap-2">
-          {place && (
-            <a className="btn-secondary" href={directionsUrl(ll, place)} target="_blank" rel="noreferrer">
-              🧭 {formatMiles(distanceToPlace(a, place)!.miles)} to {place.label} — directions
-            </a>
+      <div className="flex flex-wrap gap-2">
+        {ll && place && (
+          <a className="btn-secondary" href={directionsUrl(ll, place)} target="_blank" rel="noreferrer">
+            🧭 {formatMiles(distanceToPlace(a, place)!.miles)} to {place.label}
+          </a>
+        )}
+        {a.listing_url && (
+          <a className="btn-secondary" href={a.listing_url} target="_blank" rel="noreferrer">
+            Open listing ↗
+          </a>
+        )}
+        {a.phone && (
+          <a className="btn-secondary" href={`tel:${a.phone.replace(/[^\d+]/g, "")}`}>
+            📞 Call{a.contact_name ? ` ${a.contact_name}` : ""}
+          </a>
+        )}
+        {a.email && (
+          <a className="btn-secondary" href={`mailto:${a.email}`}>
+            ✉️ Email
+          </a>
+        )}
+      </div>
+      {facts.length > 0 && (
+        <div className="ios-list">
+          {facts.map(([l, v]) => (
+            <Fact key={l} label={l} value={v} />
+          ))}
+        </div>
+      )}
+      {costs.length > 0 && (
+        <details className="ios-list">
+          <summary className="flex min-h-11 cursor-pointer items-center justify-between px-4 text-[15px] font-semibold">Cost breakdown</summary>
+          {costs.map(([l, v]) => (
+            <Fact key={l} label={l} value={formatMoney(v)} />
+          ))}
+        </details>
+      )}
+      {(a.amenities?.length ?? 0) > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {a.amenities.map((t) => (
+            <span key={t} className="rounded-full bg-gray-100 px-2.5 py-1 text-xs">
+              {t}
+            </span>
+          ))}
+        </div>
+      )}
+      {(a.pros || a.cons || a.notes) && (
+        <div className="grid gap-2 @md:grid-cols-2">
+          {a.pros && (
+            <div className="rounded-2xl bg-emerald-50 p-3 text-sm whitespace-pre-line">
+              <b className="block text-emerald-800">👍 Pros</b>
+              {a.pros}
+            </div>
           )}
-          {a.listing_url && (
-            <a className="btn-ghost" href={a.listing_url} target="_blank" rel="noreferrer">
-              Open listing ↗
-            </a>
+          {a.cons && (
+            <div className="rounded-2xl bg-red-50 p-3 text-sm whitespace-pre-line">
+              <b className="block text-red-800">👎 Cons</b>
+              {a.cons}
+            </div>
+          )}
+          {a.notes && (
+            <div className="rounded-2xl bg-gray-50 p-3 text-sm whitespace-pre-line @md:col-span-2">
+              <b className="block">Notes</b>
+              {a.notes}
+            </div>
           )}
         </div>
       )}
@@ -573,11 +692,6 @@ function Detail({ a }: { a: Apartment }) {
         <div className="eyebrow mb-3">🏫 Schools for this address</div>
         <SchoolsPanel a={a} levels={levels} compact />
       </div>
-      {!ll && a.listing_url && (
-        <a className="btn-ghost" href={a.listing_url} target="_blank" rel="noreferrer">
-          Open listing ↗
-        </a>
-      )}
     </div>
   );
 }
@@ -594,7 +708,44 @@ function Top({ api }: { api: CrudApi<"apartments"> }) {
   );
 }
 
+const SORTS: { value: string; label: string }[] = [
+  { value: "cost", label: "Lowest cost" },
+  { value: "distance", label: "Closest" },
+  { value: "rating", label: "Top rated" },
+  { value: "size", label: "Biggest" },
+  { value: "beds", label: "Most bedrooms" },
+  { value: "newest", label: "Newest added" },
+  { value: "status", label: "Furthest along" },
+];
+
+const STATUS_ORDER = APARTMENT_STATUSES.map((s) => s.value);
+
+function apartmentSorter(key: string, place: Place | null): (a: Apartment, b: Apartment) => number {
+  const cost = (a: Apartment) => apartmentCosts(a).monthly || 9e9;
+  const byCost = (a: Apartment, b: Apartment) => cost(a) - cost(b);
+  switch (key) {
+    case "distance":
+      return (a, b) => (distanceToPlace(a, place)?.miles ?? 9e9) - (distanceToPlace(b, place)?.miles ?? 9e9) || byCost(a, b);
+    case "rating":
+      return (a, b) => (b.rating ?? 0) - (a.rating ?? 0) || byCost(a, b);
+    case "size":
+      return (a, b) => (b.sqft ?? 0) - (a.sqft ?? 0) || byCost(a, b);
+    case "beds":
+      return (a, b) => (b.bedrooms ?? 0) - (a.bedrooms ?? 0) || (b.bathrooms ?? 0) - (a.bathrooms ?? 0) || byCost(a, b);
+    case "newest":
+      return (a, b) => b.created_at.localeCompare(a.created_at);
+    case "status":
+      return (a, b) => STATUS_ORDER.indexOf(b.status) - STATUS_ORDER.indexOf(a.status) || byCost(a, b);
+    default:
+      return byCost;
+  }
+}
+
 export default function ApartmentsPage() {
+  const db = useDb();
+  const place = primaryPlace(db.moves[0]?.places);
+  const [sortKey, setSortKey] = useLocalState("apt:sort", "cost");
+  const sort = useMemo(() => apartmentSorter(sortKey, place), [sortKey, place]);
   return (
     <CrudPage
       table="apartments"
@@ -602,11 +753,59 @@ export default function ApartmentsPage() {
       subtitle="Every place you're considering — on a map, with photos, true monthly cost, distance to the places that matter and how it fits your budget."
       top={(api) => <Top api={api} />}
       filters={["status"]}
-      sort={(a, b) => apartmentCosts(a).monthly - apartmentCosts(b).monthly}
+      where={(a) => a.status !== "rejected"}
+      sort={sort}
+      viewFirst
+      toolbar={
+        <label className="flex items-center gap-1.5 text-sm text-gray-500">
+          Sort
+          <select className="ios-popup font-semibold text-ink" value={sortKey} onChange={(e) => setSortKey(e.target.value)} aria-label="Sort apartments">
+            {SORTS.filter((s) => s.value !== "distance" || place).map((s) => (
+              <option key={s.value} value={s.value}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      }
       renderCard={(a, open) => <ApartmentCard a={a} open={open} />}
       renderDetail={(a) => <Detail a={a} />}
+      after={(api) => <NotChosen api={api} sort={sort} />}
       emptyText="Add each apartment or rental you find — or paste a listing link and we'll pull the photos, address and rent."
     />
+  );
+}
+
+/** Ruled-out places, tucked away but restorable. */
+function NotChosen({ api, sort }: { api: CrudApi<"apartments">; sort: (a: Apartment, b: Apartment) => number }) {
+  const db = useDb();
+  const store = useStore();
+  const out = db.apartments.filter((a) => a.status === "rejected").sort(sort);
+  if (!out.length) return null;
+  return (
+    <details className="mt-8 rounded-3xl border border-gray-200 bg-white">
+      <summary className="flex min-h-14 cursor-pointer items-center justify-between gap-3 px-5 font-display text-lg font-bold">
+        <span>
+          🚫 Not chosen <span className="text-sm font-medium text-gray-400">{out.length}</span>
+        </span>
+        <span className="text-xs font-normal text-gray-400">Tap to show</span>
+      </summary>
+      <ul className="divide-y divide-gray-100 border-t border-gray-100">
+        {out.map((a) => (
+          <li key={a.id} className="flex items-center gap-3 px-4 py-2">
+            <button type="button" className="min-h-11 min-w-0 flex-1 text-left" onClick={() => api.open(a.id)}>
+              <span className="block truncate font-semibold">{a.name || "Untitled rental"}</span>
+              <span className="block truncate text-xs text-gray-500">
+                {[apartmentCosts(a).monthly ? `${formatMoney(apartmentCosts(a).monthly)}/mo` : "", a.cons.split("\n")[0]].filter(Boolean).join(" · ") || apartmentAddress(a)}
+              </span>
+            </button>
+            <button type="button" className="btn-secondary flex-none px-3 text-sm" onClick={() => store.update("apartments", a.id, { status: "researching" })}>
+              Restore
+            </button>
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }
 
@@ -614,8 +813,16 @@ export default function ApartmentsPage() {
 function Comparison() {
   const db = useDb();
   const store = useStore();
-  const apts = db.apartments.filter((a) => a.status !== "rejected").sort((a, b) => apartmentCosts(a).monthly - apartmentCosts(b).monthly);
-  if (apts.length < 2) return null;
+  const [picked, setPicked] = useLocalState<string[] | null>("apt:compare", null);
+  const live = db.apartments.filter((a) => a.status !== "rejected").sort((a, b) => (apartmentCosts(a).monthly || 9e9) - (apartmentCosts(b).monthly || 9e9));
+  if (live.length < 2) return null;
+  // Until you choose, compare the 4 cheapest.
+  const chosen = picked ? live.filter((a) => picked.includes(a.id)) : live.slice(0, 4);
+  const toggle = (id: string) => {
+    const cur = chosen.map((a) => a.id);
+    setPicked(cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]);
+  };
+  const apts = chosen;
   const cheapest = apts.find((a) => apartmentCosts(a).monthly > 0)?.id;
   const choose = (a: Apartment) => {
     for (const o of db.apartments) if (o.id !== a.id && o.status === "signed") store.update("apartments", o.id, { status: "approved" });
@@ -633,55 +840,93 @@ function Comparison() {
     ["Special", (a) => a.move_in_special || "—"],
     ["Laundry", (a) => a.laundry.replace(/_/g, " ")],
     ["Parking", (a) => a.parking],
-    ["Pets", (a) => (a.pets_allowed ? "✅" : "🚫")],
     ["Commute", (a) => (a.commute_minutes ? `${a.commute_minutes} min` : "—")],
-    ["Schools", (a) => a.school_district || "—"],
     ["Available", (a) => formatDate(a.available_date) || "—"],
     ["Rating", (a) => (a.rating ? "★".repeat(a.rating) : "—")],
+    ["Top school", (a) => <TopSchoolCell a={a} />],
   ];
   return (
-    <div className="card overflow-x-auto p-0">
-      <table className="w-full min-w-[640px] text-sm">
-        <thead>
-          <tr className="border-b border-slate-200 bg-slate-50">
-            <th className="sticky left-0 bg-slate-50 p-3 text-left text-xs uppercase text-slate-500">Compare</th>
-            {apts.map((a) => (
-              <th key={a.id} className="p-3 text-left align-top">
-                <div className="font-bold">{a.name}</div>
-                <StatusPill value={a.status} options={APARTMENT_STATUSES} color={STATUS_COLORS[a.status]} />
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map(([label, fn]) => (
-            <tr key={label} className="border-b border-slate-100">
-              <td className="sticky left-0 bg-white p-3 text-xs font-semibold text-slate-500">{label}</td>
+    <div className="mb-6">
+      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="font-display text-xl font-bold tracking-tight">Compare side by side</h2>
+        <span className="text-xs text-gray-500">Tap names to choose which to compare</span>
+      </div>
+      <div className="no-scrollbar mb-3 flex gap-1.5 overflow-x-auto overflow-y-hidden py-0.5">
+        {live.map((a) => {
+          const on = chosen.some((c) => c.id === a.id);
+          return (
+            <button
+              type="button"
+              key={a.id}
+              aria-pressed={on}
+              onClick={() => toggle(a.id)}
+              className={`min-h-9 max-w-[70vw] flex-none truncate rounded-full border px-3 text-[13px] font-semibold whitespace-nowrap transition ${on ? "border-ink bg-ink text-white" : "border-gray-200 bg-white text-gray-600"}`}
+            >
+              {on ? "✓ " : ""}
+              {a.name || "Untitled"}
+            </button>
+          );
+        })}
+      </div>
+      {apts.length < 2 ? (
+        <p className="card text-sm text-gray-500">Pick at least two places above to compare them.</p>
+      ) : (
+        <div className="card overflow-x-auto p-0">
+          <table className="w-max min-w-full table-fixed border-separate border-spacing-0 text-[14px]">
+            <colgroup>
+              <col className="w-28" />
               {apts.map((a) => (
-                <td key={a.id} className="p-3">
-                  {fn(a)}
-                </td>
+                <col key={a.id} className="w-40" />
               ))}
-            </tr>
-          ))}
-          <tr>
-            <td className="sticky left-0 bg-white p-3" />
-            {apts.map((a) => (
-              <td key={a.id} className="p-3">
-                {a.status !== "signed" && (
-                  <button className="btn-secondary px-2 py-1 text-xs" onClick={() => choose(a)}>
-                    Choose this place
-                  </button>
-                )}
-              </td>
-            ))}
-          </tr>
-        </tbody>
-      </table>
+            </colgroup>
+            <thead>
+              <tr>
+                <th className="sticky left-0 z-10 border-b border-slate-200 bg-slate-50 px-3 py-2" />
+                {apts.map((a) => (
+                  <th key={a.id} className="border-b border-slate-200 bg-slate-50 px-3 py-2 text-left align-top font-normal">
+                    <div className="line-clamp-2 min-h-[2.5em] text-[15px] leading-tight font-bold" title={a.name}>
+                      {a.name || "Untitled"}
+                    </div>
+                    <div className="mt-1 flex items-center gap-1.5 text-[12px] text-gray-500">
+                      <span className="h-2 w-2 flex-none rounded-full" style={{ background: STATUS_COLORS[a.status] }} />
+                      <span className="truncate">{optionLabel(APARTMENT_STATUSES, a.status)}</span>
+                    </div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(([label, fn]) => (
+                <tr key={label}>
+                  <td className="sticky left-0 z-10 border-b border-slate-100 bg-white px-3 py-2 text-[12px] font-semibold text-slate-500">{label}</td>
+                  {apts.map((a) => (
+                    <td key={a.id} className="border-b border-slate-100 px-3 py-2 align-middle">
+                      <div className="line-clamp-2 min-w-0">{fn(a)}</div>
+                    </td>
+                  ))}
+                </tr>
+              ))}
+              <tr>
+                <td className="sticky left-0 z-10 bg-white px-3 py-3" />
+                {apts.map((a) => (
+                  <td key={a.id} className="px-3 py-3">
+                    {a.status === "signed" ? (
+                      <div className="flex min-h-11 w-full items-center justify-center rounded-full bg-emerald-50 text-[13px] font-semibold text-emerald-700">✓ Chosen</div>
+                    ) : (
+                      <button type="button" className="min-h-11 w-full rounded-full bg-ink/[0.06] text-[13px] font-semibold whitespace-nowrap text-ink transition hover:bg-ink/10" onClick={() => choose(a)}>
+                        Choose
+                      </button>
+                    )}
+                  </td>
+                ))}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
-
 function Checklist() {
   const [open, setOpen] = useState(false);
   return (

@@ -228,7 +228,7 @@ export async function buildReport(kind: ReportKind, db: Snapshot, opts: { boxIds
         ['Special', (a) => a.move_in_special],
         ['Laundry', (a) => a.laundry.replace(/_/g, ' ')],
         ['Parking', (a) => a.parking],
-        ['Pets', (a) => (a.pets_allowed ? 'Yes' : 'No')],
+        ['Pets', () => 'Yes (ESA, no pet fees)'],
         ['Commute', (a) => (a.commute_minutes ? `${a.commute_minutes} min` : '')],
         ['Schools', (a) => a.school_district],
         ['Available', (a) => formatDate(a.available_date)],

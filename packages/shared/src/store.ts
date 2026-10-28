@@ -345,7 +345,8 @@ export class MovingStore {
     const { server_updated_at: _s, ...row } = incoming;
     if (i >= 0) {
       if (rows[i]!.updated_at > row.updated_at) return;
-      rows[i] = mergeLocalMedia(table, rows[i]!, row);
+      // Spread the local row first so on-device-only columns (not in the cloud schema yet) survive a pull.
+      rows[i] = mergeLocalMedia(table, rows[i]!, { ...rows[i]!, ...row } as BaseRow);
     } else rows.push(row);
   }
 

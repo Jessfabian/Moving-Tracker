@@ -1,6 +1,7 @@
 "use client";
 
-import { BOX_STATUSES, isBookBarcode, lookupBook, normalizeIsbn, optionLabel, parseBoxQr, productToItemPatch, type Box, type Item } from "@moving/shared";
+import { BOX_STATUSES, isBookBarcode, normalizeIsbn, optionLabel, parseBoxQr, productToItemPatch, type Box, type Item } from "@moving/shared";
+import { bookPatch, lookupBook } from "@/lib/books";
 import Link from "next/link";
 import { useRef, useState } from "react";
 import { EntityForm } from "@/components/EntityForm";
@@ -41,10 +42,7 @@ export default function ScanPage() {
       if (dup) return push({ icon: "📚", title: dup.title, sub: "Already in your books", kind: "book", ref: dup.id });
       const info = await lookupBook(isbn).catch(() => null);
       const row = info
-        ? (() => {
-            const { source: _s, ...rest } = info;
-            return store.insert("books", { ...rest, room_id: roomId || null });
-          })()
+        ? store.insert("books", { ...bookPatch(info), room_id: roomId || null })
         : store.insert("books", { isbn, title: `Unknown book (${isbn})`, room_id: roomId || null });
       push({ icon: "📚", title: row.title, sub: info ? `Added to Books · ${row.authors.join(", ")}` : "Added — fill in details in Books", kind: "book", ref: row.id });
       return;

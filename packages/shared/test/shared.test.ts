@@ -18,6 +18,8 @@ import {
   parseGoogleBooks,
   parseOpenLibrary,
   lookupBook,
+  parseIsbndb,
+  yearOnly,
   tableToCsv,
   toCsv,
   buildReport,
@@ -130,6 +132,22 @@ describe('books', () => {
     });
     const info = await lookupBook('9780306406157', fakeFetch);
     expect(info).toMatchObject({ title: 'Dune', format: 'hardcover', weight_oz: 22.4, list_price: 18.99, pages: 412 });
+  });
+
+  it('parses ISBNdb and uses it as an extra source, keeping only the year', async () => {
+    const isbndb = parseIsbndb({
+      book: {
+        title: 'Campbell Biology', isbn13: '9780134093413', authors: ['Lisa A. Urry'], binding: 'Hardcover', date_published: '2016-10-12', pages: 1488,
+        dimensions_structured: { weight: { unit: 'Pounds', value: 7.6 } }, list_price: { amount: 249.99, currency: 'USD' }, image: 'https://images.isbndb.com/covers/x.jpg',
+        prices: [{ merchant: 'X', condition: 'used', total: '12.50', link: 'https://x' }],
+      },
+    });
+    expect(isbndb).toMatchObject({ published: '2016', format: 'hardcover', weight_oz: 121.6, list_price: 249.99, pages: 1488, source: 'isbndb' });
+    expect(isbndb?.offers?.[0]?.total).toBe(12.5);
+    const empty = async () => ({ ok: false, json: async () => ({}) });
+    const info = await lookupBook('9780134093413', empty, async () => isbndb);
+    expect(info).toMatchObject({ title: 'Campbell Biology', published: '2016', weight_oz: 121.6 });
+    expect(yearOnly('May 3, 1999')).toBe('1999');
   });
 });
 

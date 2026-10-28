@@ -48,9 +48,9 @@ describe('product auto-fill', () => {
 describe('apartments', () => {
   it('computes true monthly, move-in, and first-year costs', () => {
     const c = apartmentCosts({ ...DEFAULTS.apartments, rent: 2000, pet_rent: 50, parking_fee: 100, utilities_est: 150, deposit: 2000, application_fee: 50, sqft: 1000, bedrooms: 2 });
-    expect(c.monthly).toBe(2300);
-    expect(c.moveIn).toBe(4350);
-    expect(c.firstYear).toBe(2300 * 12 + 50);
+    expect(c.monthly).toBe(2250);
+    expect(c.moveIn).toBe(4300);
+    expect(c.firstYear).toBe(2250 * 12 + 50);
     expect(c.perSqft).toBe(2);
     expect(c.perBedroom).toBe(1000);
   });

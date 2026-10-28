@@ -3,7 +3,6 @@
 import {
   SCHOOL_DISTRICTS,
   SCHOOL_LEVELS,
-  SCHOOL_RESOURCES,
   SCHOOLS_DATA_YEAR,
   apartmentLatLng,
   bestNearby,
@@ -24,6 +23,11 @@ import {
 } from "@moving/shared";
 import { useEffect, useMemo, useState } from "react";
 import { useDb, useStore } from "@/lib/store-context";
+
+const gradeRank = (letter: string | null | undefined) => {
+  const i = "ABCDF".indexOf((letter ?? "").charAt(0));
+  return i < 0 ? 0 : 5 - i;
+};
 
 /* ---------- zone lookups (cached in memory + localStorage) ---------- */
 
@@ -203,6 +207,41 @@ export function SchoolsPanel({ a, levels, municipalOnly = false, onFocus, compac
   const zn = z.zone;
   if (!zn) return null;
   const want = levels.length ? levels : SCHOOL_LEVELS.map((l) => l.key);
+  if (compact) {
+    const tops = SCHOOL_LEVELS.filter((l) => want.includes(l.key)).map(({ key, label }) => {
+      const pick = zn.picks.find((p) => p.level === key);
+      const best = pick?.school
+        ? { s: pick.school, miles: pick.miles, note: "Zoned" }
+        : pick?.candidates.length
+          ? (() => {
+              const c = [...pick.candidates].sort((x, y) => gradeRank(y.school.letter) - gradeRank(x.school.letter))[0]!;
+              return { s: c.school, miles: c.miles, note: `Top of ${pick.candidates.length} options` };
+            })()
+          : null;
+      return { key, label, best };
+    });
+    return (
+      <ul className="divide-y divide-gray-200/70 rounded-2xl bg-gray-50">
+        {tops.map(({ key, label, best }) => (
+          <li key={key} className="flex min-h-14 items-center gap-3 px-3 py-2">
+            <GradeBadge letter={best?.s.letter ?? null} />
+            <div className="min-w-0 flex-1">
+              {best ? (
+                <button type="button" className="block max-w-full truncate text-left text-[15px] font-semibold hover:underline" onClick={() => onFocus?.(best.s)}>
+                  {best.s.name}
+                </button>
+              ) : (
+                <span className="text-[15px] text-gray-500">No zoned school found</span>
+              )}
+              <div className="truncate text-[13px] text-gray-500">
+                {[label, best?.note, best?.miles != null ? `${best.miles.toFixed(1)} mi` : null, zn.district?.short].filter(Boolean).join(" · ")}
+              </div>
+            </div>
+          </li>
+        ))}
+      </ul>
+    );
+  }
   return (
     <div className="space-y-4">
       <div className={`rounded-2xl p-3 ${zn.municipal ? "bg-sky" : "bg-sand"}`}>
@@ -254,144 +293,63 @@ export function SchoolsPanel({ a, levels, municipalOnly = false, onFocus, compac
   );
 }
 
-/* ---------- compare all rentals by their zoned school ---------- */
-
-function ZoneCell({ a, level, active, onClick }: { a: Apartment; level: SchoolLevel; active: boolean; onClick: () => void }) {
-  const z = useSchoolZone(apartmentLatLng(a));
-  const pick = z.zone?.picks.find((p) => p.level === level);
-  const best = pick?.school ?? pick?.candidates.slice().sort((x, y) => (y.school.score ?? 0) - (x.school.score ?? 0))[0]?.school ?? null;
+/** Details for a school tapped on the map. */
+export function SchoolCard({ school, from, fromName, onClose }: { school: School; from: LatLng | null; fromName?: string; onClose: () => void }) {
   return (
-    <button onClick={onClick} className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition ${active ? "border-ink bg-ink text-white" : "border-gray-200 bg-white hover:border-gray-400"}`}>
-      <GradeBadge letter={best?.letter ?? null} />
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-semibold">{a.name || "Rental"}</span>
-        <span className={`block truncate text-xs ${active ? "text-white/70" : "text-gray-500"}`}>
-          {z.status === "ok"
-            ? pick?.school
-              ? `${pick.school.name} · ${pick.miles?.toFixed(1)} mi`
-              : z.zone.municipal
-                ? `${z.zone.district?.short} municipal · ${pick?.candidates.length ?? 0} options`
-                : pick?.zonedName || "No zone"
-            : z.status === "loading"
-              ? "Looking up…"
-              : z.status === "outside"
-                ? "Outside Shelby County"
-                : z.status === "none"
-                  ? "Needs an address"
-                  : "Zone lookup failed"}
-        </span>
-      </span>
-      {z.zone?.municipal && <span className={`chip ${active ? "bg-lime text-ink" : "bg-sky text-ink"}`}>Municipal</span>}
-    </button>
+    <div className="card border-2 border-ink">
+      <div className="flex items-start gap-4">
+        <GradeBadge letter={school.letter} size="lg" />
+        <div className="min-w-0 flex-1">
+          <div className="font-display text-xl font-bold">{school.name}</div>
+          <div className="text-sm text-gray-500">
+            {school.street}, {school.city} {school.zip} · {school.phone}
+          </div>
+          <div className="mt-1 text-xs text-gray-500">{school.district.name}</div>
+        </div>
+        <button className="flex h-11 w-11 flex-none items-center justify-center text-gray-400 hover:text-ink" onClick={onClose} aria-label="Close school">
+          ✕
+        </button>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
+        {[
+          ["Grades", schoolGrades(school)],
+          ["Achievement", school.achievement ?? "—"],
+          ["Growth", school.growth ?? "—"],
+          ["On grade level", school.successRate != null ? `${school.successRate}%` : "—"],
+          ["Students", school.enrollment?.toLocaleString() ?? "—"],
+          ["Student:teacher", school.ratio ? `${school.ratio}:1` : "—"],
+          ["College/career ready", school.ccrRate != null ? `${school.ccrRate}%` : "—"],
+          [fromName ? `From ${fromName}` : "From rental", from ? `${distanceMiles(from, school).toFixed(1)} mi` : "—"],
+        ].map(([k, v]) => (
+          <div key={k} className="min-w-0 rounded-xl bg-gray-50 p-2">
+            <div className="truncate text-[11px] text-gray-500 uppercase">{k}</div>
+            <div className="font-semibold">{v}</div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3">
+        <SchoolLinks s={school} />
+      </div>
+    </div>
   );
 }
 
-export function SchoolsSection({
-  apartments,
-  focusId,
-  setFocus,
-  level,
-  municipalOnly,
-  focusSchool,
-  setFocusSchool,
-}: {
-  apartments: Apartment[];
-  focusId: string | null;
-  setFocus: (id: string) => void;
-  level: SchoolLevel;
-  municipalOnly: boolean;
-  focusSchool: School | null;
-  setFocusSchool: (s: School | null) => void;
-}) {
-  const focus = apartments.find((a) => a.id === focusId) ?? null;
-  const { kids } = useKidLevels();
-  const levelLabel = SCHOOL_LEVELS.find((l) => l.key === level)!.label;
-  const fll = focus ? apartmentLatLng(focus) : null;
+/** Zoned school (first kid's level) for a compare-table cell. */
+export function TopSchoolCell({ a }: { a: Apartment }) {
+  const { levels } = useKidLevels();
+  const level = levels[0] ?? "E";
+  const z = useSchoolZone(apartmentLatLng(a));
+  if (z.status === "loading") return <span className="text-gray-400">…</span>;
+  if (z.status !== "ok") return <span className="text-gray-400">—</span>;
+  if (z.zone.municipal) return <span className="font-semibold">{z.zone.district?.short} municipal</span>;
+  const pick = z.zone.picks.find((p) => p.level === level);
+  const s = pick?.school ?? [...(pick?.candidates ?? [])].sort((x, y) => gradeRank(y.school.letter) - gradeRank(x.school.letter))[0]?.school;
+  if (!s) return <span className="text-gray-400">—</span>;
   return (
-    <section className="mb-6 grid gap-4 xl:grid-cols-[340px_minmax(0,1fr)]">
-      <div className="space-y-3">
-        <div className="card-ink">
-          <div className="eyebrow text-white/50">Schools</div>
-          <div className="font-display text-2xl font-bold tracking-tight">{levelLabel} options by rental</div>
-          <p className="mt-1 text-sm text-white/60">
-            Pick a rental to see its zoned schools, how far they are and better-rated choices nearby.
-            {kids.length > 0 && ` Tailored for ${kids.map((k) => `${k.name} (${k.age})`).join(", ")}.`}
-          </p>
-        </div>
-        {apartments.length ? (
-          apartments.map((a) => <ZoneCell key={a.id} a={a} level={level} active={a.id === focusId} onClick={() => setFocus(a.id)} />)
-        ) : (
-          <p className="card text-sm text-gray-500">Add a rental with an address to compare school zones.</p>
-        )}
-        <div className="card">
-          <div className="eyebrow mb-2">Research more</div>
-          <ul className="space-y-1.5 text-sm">
-            {SCHOOL_RESOURCES.map((r) => (
-              <li key={r.url}>
-                <a className="text-indigo-600 hover:underline" href={r.url} target="_blank" rel="noreferrer">
-                  {r.label} ↗
-                </a>
-              </li>
-            ))}
-          </ul>
-          <p className="mt-3 text-[11px] leading-relaxed text-gray-400">
-            Zones: Shelby County School Site Locator. Schools: NCES {SCHOOLS_DATA_YEAR}. Grades: TN Dept. of Education {SCHOOLS_DATA_YEAR} A–F letter grades. Zones change yearly — always confirm with the district before signing a lease.
-          </p>
-        </div>
-      </div>
-      <div className="space-y-4">
-        {focusSchool && (
-          <div className="card border-2 border-ink">
-            <div className="flex items-start gap-4">
-              <GradeBadge letter={focusSchool.letter} size="lg" />
-              <div className="min-w-0 flex-1">
-                <div className="font-display text-xl font-bold">{focusSchool.name}</div>
-                <div className="text-sm text-gray-500">
-                  {focusSchool.street}, {focusSchool.city} {focusSchool.zip} · {focusSchool.phone}
-                </div>
-                <div className="mt-1 text-xs text-gray-500">{focusSchool.district.name}</div>
-              </div>
-              <button className="text-gray-400 hover:text-ink" onClick={() => setFocusSchool(null)} aria-label="Close school">
-                ✕
-              </button>
-            </div>
-            <div className="mt-3 grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
-              {[
-                ["Grades", schoolGrades(focusSchool)],
-                ["Achievement", focusSchool.achievement ?? "—"],
-                ["Growth", focusSchool.growth ?? "—"],
-                ["On grade level", focusSchool.successRate != null ? `${focusSchool.successRate}%` : "—"],
-                ["Students", focusSchool.enrollment?.toLocaleString() ?? "—"],
-                ["Student:teacher", focusSchool.ratio ? `${focusSchool.ratio}:1` : "—"],
-                ["College/career ready", focusSchool.ccrRate != null ? `${focusSchool.ccrRate}%` : "—"],
-                ["From rental", fll ? `${distanceMiles(fll, focusSchool).toFixed(1)} mi` : "—"],
-              ].map(([k, v]) => (
-                <div key={k} className="rounded-xl bg-gray-50 p-2">
-                  <div className="text-[11px] text-gray-500 uppercase">{k}</div>
-                  <div className="font-semibold">{v}</div>
-                </div>
-              ))}
-            </div>
-            <div className="mt-3">
-              <SchoolLinks s={focusSchool} />
-            </div>
-          </div>
-        )}
-        <div className="card">
-          {focus ? (
-            <>
-              <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-                <div className="font-display text-xl font-bold">Schools for {focus.name || "this rental"}</div>
-                <span className="text-xs text-gray-500">Click a school name to focus it on the map</span>
-              </div>
-              <SchoolsPanel a={focus} levels={[level]} municipalOnly={municipalOnly} onFocus={setFocusSchool} />
-            </>
-          ) : (
-            <p className="text-sm text-gray-500">Pick a rental on the left (or click its pin) to see its schools.</p>
-          )}
-        </div>
-      </div>
-    </section>
+    <span className="flex min-w-0 items-center gap-1.5">
+      <GradeBadge letter={s.letter} size="sm" />
+      <span className="line-clamp-2 min-w-0 leading-tight">{s.name.replace(/ School$/i, "")}</span>
+    </span>
   );
 }
 

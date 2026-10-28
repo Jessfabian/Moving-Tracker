@@ -217,6 +217,12 @@ export interface Item extends BaseRow {
   image_url: string;
   /** New/retail price found when the barcode was looked up. */
   retail_price: number | null;
+  /** When it was bought — older things resell for less. */
+  purchase_date: string | null;
+  /** What was actually paid (used when there's no retail price). */
+  purchase_price: number | null;
+  /** Shopping / product page it came from. */
+  product_url: string;
   fragile: boolean;
   photos: MediaRef[];
   notes: string;
@@ -349,6 +355,8 @@ export interface Book extends BaseRow {
   list_price: number | null;
   sale_channel: string;
   sale_id: ID | null;
+  /** Your own photos (condition, signed copy, cover when there's no online image). */
+  photos: MediaRef[];
   notes: string;
 }
 

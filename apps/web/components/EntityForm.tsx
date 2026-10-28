@@ -4,14 +4,17 @@ import {
   DEFAULTS,
   SCHEMAS,
   formatMoney,
-  lookupBook,
   bookPriceLinks,
+  bookLookupLinks,
+  yearOnly,
+  type BookOffer,
   normalizeIsbn,
   productToItemPatch,
   apartmentAddress,
   listingToApartmentPatch,
   parseListingText,
   type ListingInfo,
+  type ProductInfo,
   needsGeocode,
   travelForm,
   type Apartment,
@@ -21,12 +24,14 @@ import {
   type TableName,
 } from "@moving/shared";
 import { useMemo, useState } from "react";
+import { bookPatch, isbndbLookup, lookupBook } from "@/lib/books";
 import { fetchListing, geocodeOne } from "@/lib/geo";
+import { imageUrlToMedia } from "@/lib/media";
 import { lookupProduct } from "@/lib/lookup";
 import { useDb, useStore } from "@/lib/store-context";
 import { AddressInput, ZipInput } from "./AddressInput";
 import { FlightLookup } from "./Flights";
-import { Gallery, ImageUrlsField } from "./Gallery";
+import { ImageUrlsField } from "./Gallery";
 import { MediaField } from "./Media";
 import { MoveDistance } from "./MoveDistance";
 import { Scanner } from "./Scanner";
@@ -227,6 +232,26 @@ function ListingImport({ draft, setDraft }: { draft: Row; setDraft: (fn: (d: Row
   const [busy, setBusy] = useState(false);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasted, setPasted] = useState("");
+  const imageUrls = Array.isArray(draft.image_urls) ? (draft.image_urls as string[]) : [];
+  const photos = Array.isArray(draft.photos) ? (draft.photos as MediaRef[]) : [];
+  const [collapsed, setCollapsed] = useState(() => !!draft.listing_url || imageUrls.length > 0);
+  const [saving, setSaving] = useState<string | null>(null);
+
+  const keepPhotos = async () => {
+    const urls = imageUrls.slice(0, 20);
+    const saved: MediaRef[] = [];
+    const done = new Set<string>();
+    for (const [i, u] of urls.entries()) {
+      setSaving(`Saving photo ${i + 1} of ${urls.length}…`);
+      const m = await imageUrlToMedia(u).catch(() => null);
+      if (m) {
+        saved.push(m);
+        done.add(u);
+      }
+    }
+    setDraft((d) => ({ ...d, photos: [...((d.photos as MediaRef[]) ?? []), ...saved], image_urls: ((d.image_urls as string[]) ?? []).filter((u) => !done.has(u)) }));
+    setSaving(saved.length ? `Saved ${saved.length} photo${saved.length === 1 ? "" : "s"} into the app${saved.length < urls.length ? ` (${urls.length - saved.length} wouldn’t download)` : ""}.` : "The site wouldn’t let us download its photos.");
+  };
 
   const apply = async (info: ListingInfo, link?: string) => {
     setDraft((d) => ({ ...d, ...(link ? { listing_url: link } : {}), ...listingToApartmentPatch(info, d as Partial<Apartment>) }));
@@ -258,7 +283,10 @@ function ListingImport({ draft, setDraft }: { draft: Row; setDraft: (fn: (d: Row
       if (info.partial) {
         setPasteOpen(true);
         setMsg(`${info.note ?? ""}${summary ? ` Got: ${summary}.` : ""}`);
-      } else setMsg(summary ? `Filled in: ${summary}. Review below, then save.` : "Opened the page but found nothing useful — paste the page text below instead.");
+      } else if (summary) {
+        setMsg(`Filled in: ${summary}. Review below, then save.`);
+        setCollapsed(true);
+      } else setMsg("Opened the page but found nothing useful — paste the page text below instead.");
     } catch {
       setPasteOpen(true);
       setMsg("Couldn't open that link — paste the page text below instead.");
@@ -279,6 +307,7 @@ function ListingImport({ draft, setDraft }: { draft: Row; setDraft: (fn: (d: Row
     setMsg(`Filled in: ${summary}. Review below, then save.`);
     setPasted("");
     setPasteOpen(false);
+    setCollapsed(true);
   };
 
   const fromClipboard = async () => {
@@ -296,7 +325,27 @@ function ListingImport({ draft, setDraft }: { draft: Row; setDraft: (fn: (d: Row
     }
   };
 
+  const host = (() => {
+    try {
+      return new URL(String(draft.listing_url)).hostname.replace(/^www\./, "");
+    } catch {
+      return "";
+    }
+  })();
   return (
+    <div className="space-y-3">
+      {collapsed ? (
+        <div className="flex min-h-14 items-center gap-3 rounded-2xl bg-ink px-4 py-2 text-white">
+          <span className="grid h-8 w-8 flex-none place-items-center rounded-full bg-lime font-bold text-ink">✓</span>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[15px] font-semibold">{host ? `Imported from ${host}` : "Listing imported"}</div>
+            {msg && <div className="truncate text-[12px] text-white/60">{msg.replace(/^Filled in: /, "").replace(/\. Review below, then save\.$/, "")}</div>}
+          </div>
+          <button type="button" className="min-h-11 flex-none px-2 text-[13px] font-semibold text-lime" onClick={() => setCollapsed(false)}>
+            Re-import
+          </button>
+        </div>
+      ) : (
     <div className="rounded-3xl bg-ink p-4 text-white">
       <div className="mb-1 font-display text-lg font-bold tracking-tight">Import from a listing link</div>
       <p className="mb-3 text-[13px] text-white/60">Paste a link from Zillow, FirstKey, a building&apos;s own site… We&apos;ll pull the photos, address, rent, beds and size. For Apartments.com, copy the page text instead (steps below).</p>
@@ -364,7 +413,158 @@ function ListingImport({ draft, setDraft }: { draft: Row; setDraft: (fn: (d: Row
           )}
         </div>
       )}
-      {Array.isArray(draft.image_urls) && draft.image_urls.length > 0 && <Gallery urls={draft.image_urls as string[]} className="mt-3" />}
+      {(!!draft.listing_url || imageUrls.length > 0) && (
+        <button type="button" className="mt-1 min-h-11 text-[13px] font-semibold text-white/70" onClick={() => setCollapsed(true)}>
+          Done
+        </button>
+      )}
+    </div>
+      )}
+      <div className="rounded-2xl border border-slate-200 bg-white p-3">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <span className="text-sm font-bold">Photos</span>
+          {imageUrls.length > 0 && (
+            <button type="button" className="min-h-9 rounded-full bg-ink/[0.06] px-3 text-[12px] font-semibold" disabled={!!saving && saving.startsWith("Saving")} onClick={() => void keepPhotos()}>
+              ⬇︎ Save listing photos to app
+            </button>
+          )}
+        </div>
+        {saving && <p className="mb-2 text-xs text-slate-500">{saving}</p>}
+        {imageUrls.length > 0 && (
+          <div className="mb-3">
+            <div className="mb-1 text-[12px] font-semibold text-slate-500 uppercase">From the listing</div>
+            <ImageUrlsField value={imageUrls} onChange={(v) => setDraft((d) => ({ ...d, image_urls: v }))} />
+          </div>
+        )}
+        <div className="mb-1 text-[12px] font-semibold text-slate-500 uppercase">Your photos</div>
+        <MediaField value={photos} onChange={(v) => setDraft((d) => ({ ...d, photos: v }))} />
+      </div>
+    </div>
+  );
+}
+
+function BookSources({ cover, isbn }: { cover: string; isbn: string }) {
+  const [offers, setOffers] = useState<BookOffer[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const livePrices = async () => {
+    setBusy(true);
+    setMsg(null);
+    const info = await isbndbLookup(isbn, { prices: true });
+    setBusy(false);
+    if (!info) return setMsg("ISBNdb didn’t answer — add your ISBNdb key in Settings, or use the links.");
+    const list = (info.offers ?? []).filter((o) => o.total != null).sort((a, b) => (a.total ?? 0) - (b.total ?? 0));
+    setOffers(list);
+    if (!list.length) setMsg(info.list_price ? `No live offers on your ISBNdb plan · list price ${formatMoney(info.list_price)}` : "No live offers on your ISBNdb plan (prices need ISBNdb Pro).");
+  };
+  const linkCls = "rounded-full bg-white px-2.5 py-1 text-xs font-medium text-indigo-700 ring-1 ring-slate-200";
+  return (
+    <div className="flex gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+      {cover && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={cover} alt="" className="h-32 flex-none rounded-md shadow" />
+      )}
+      {isbn && (
+        <div className="min-w-0 flex-1 space-y-2 text-sm">
+          <div>
+            <div className="mb-1 font-semibold">Check resale prices</div>
+            <div className="flex flex-wrap gap-1.5">
+              {bookPriceLinks(isbn).map((l) => (
+                <a key={l.url} href={l.url} target="_blank" rel="noreferrer" className={linkCls}>
+                  {l.label.replace(/ \(.*\)/, "")} ↗
+                </a>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div className="mb-1 font-semibold">Look up details</div>
+            <div className="flex flex-wrap gap-1.5">
+              {bookLookupLinks(isbn).map((l) => (
+                <a key={l.url} href={l.url} target="_blank" rel="noreferrer" className={linkCls}>
+                  {l.label} ↗
+                </a>
+              ))}
+            </div>
+          </div>
+          <button type="button" className="btn-secondary text-xs" disabled={busy} onClick={() => void livePrices()}>
+            {busy ? "Checking stores…" : "💲 Live prices (ISBNdb)"}
+          </button>
+          {offers && offers.length > 0 && (
+            <ul className="divide-y divide-slate-200 rounded-xl bg-white text-xs ring-1 ring-slate-200">
+              {offers.slice(0, 6).map((o, i) => (
+                <li key={i} className="flex items-center justify-between gap-2 px-3 py-2">
+                  <a href={o.link} target="_blank" rel="noreferrer" className="min-w-0 truncate text-indigo-700">
+                    {o.merchant || "Store"} <span className="text-slate-500">· {o.condition || "—"}</span>
+                  </a>
+                  <b className="flex-none">{formatMoney(o.total ?? 0)}</b>
+                </li>
+              ))}
+            </ul>
+          )}
+          {msg && <p className="text-xs text-slate-500">{msg}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function ProductLinkImport({ draft, setDraft }: { draft: Row; setDraft: (fn: (d: Row) => Row) => void }) {
+  const [url, setUrl] = useState(String(draft.product_url ?? ""));
+  const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const run = async (raw = url) => {
+    const link = raw.trim();
+    if (!/^https?:\/\//i.test(link)) return setMsg("Paste the full link, starting with https://");
+    setBusy(true);
+    setMsg("Reading the store page…");
+    try {
+      const res = await fetch(`/api/product?url=${encodeURIComponent(link)}`);
+      const p = (await res.json()) as ProductInfo & { error?: string; note?: string };
+      if (p.error) {
+        setDraft((d) => ({ ...d, product_url: link }));
+        return setMsg(p.error);
+      }
+      setDraft((d) => ({ ...d, product_url: link, ...productToItemPatch(p, d as Parameters<typeof productToItemPatch>[1]) }));
+      setMsg(p.note ?? `Found “${p.name}”${p.price != null ? ` · ${formatMoney(p.price)} new` : " — add the price"} from ${p.source}.`);
+    } catch {
+      setMsg("Couldn't open that link — fill the details in yourself.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="rounded-2xl bg-gray-50 p-3">
+      <label className="label" htmlFor="product-link">
+        🔗 Shopping page link
+      </label>
+      <div className="flex gap-2">
+        <input
+          id="product-link"
+          className="input"
+          type="url"
+          placeholder="Paste an Amazon, Target, IKEA… link"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          onPaste={(e) => {
+            const t = e.clipboardData.getData("text").trim();
+            if (/^https?:\/\/\S+$/i.test(t)) {
+              e.preventDefault();
+              setUrl(t);
+              void run(t);
+            }
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              void run();
+            }
+          }}
+        />
+        <button type="button" className="btn-secondary flex-none" onClick={() => void run()} disabled={busy}>
+          {busy ? "…" : "Fill in"}
+        </button>
+      </div>
+      <p className="mt-1 text-xs text-gray-500">{msg ?? "We pull the name, brand, price and picture. Some stores (like Amazon) block this — then we use the name in the link."}</p>
     </div>
   );
 }
@@ -397,14 +597,17 @@ export function EntityForm<T extends TableName>({
     const out: { name: string; fields: FieldDef[] }[] = [];
     const kindForm = travelKind != null ? travelForm(travelKind) : null;
     const extra = kindForm?.hidden ?? [];
-    for (const raw of schema.fields.filter((f) => !hide.includes(f.key) && !extra.includes(f.key))) {
+    // Apartments show their photos inside the import card, and coordinates are filled from the address.
+    const aptHidden = table === "apartments" ? ["image_urls", "photos", "latitude", "longitude"] : [];
+    for (const raw of schema.fields.filter((f) => !hide.includes(f.key) && !extra.includes(f.key) && !aptHidden.includes(f.key))) {
       const f = kindForm?.labels[raw.key] ? { ...raw, label: kindForm.labels[raw.key]! } : raw;
       const name = f.section ?? "";
       const s = out.find((x) => x.name === name) ?? (out.push({ name, fields: [] }), out[out.length - 1]!);
       s.fields.push(f);
     }
     return out;
-  }, [schema, hide, travelKind]);
+  }, [schema, hide, travelKind, table]);
+  const collapsible = table === "apartments";
 
   const scanTarget = table === "books" ? "isbn" : table === "items" ? "barcode" : null;
 
@@ -417,9 +620,8 @@ export function EntityForm<T extends TableName>({
         setLookupMsg("No match found — enter details manually.");
         return;
       }
-      const { source: _s, ...rest } = info;
-      setDraft((d) => ({ ...d, ...rest }));
-      setLookupMsg(`Found “${info.title}”`);
+      setDraft((d) => ({ ...d, ...bookPatch(info) }));
+      setLookupMsg(`Found “${info.title}”${info.source === "isbndb" ? " on ISBNdb" : ""}`);
     } else {
       set("barcode", code);
       const p = await lookupProduct(code);
@@ -437,6 +639,7 @@ export function EntityForm<T extends TableName>({
     }
     const clean = { ...draft };
     for (const f of schema.fields) if (f.type === "tags" && Array.isArray(clean[f.key])) clean[f.key] = (clean[f.key] as string[]).map((s) => s.trim()).filter(Boolean);
+    if (table === "books" && typeof clean.published === "string") clean.published = yearOnly(clean.published);
     const { id: _id, household_id: _h, created_at: _c, updated_at: _u, ...data } = clean;
     const saved = row ? store.update(table, row.id, data as Partial<TableMap[T]>) : store.insert(table, data as never);
     if (saved && table === "apartments" && needsGeocode(saved as unknown as Apartment)) {
@@ -476,6 +679,7 @@ export function EntityForm<T extends TableName>({
         </div>
       )}
       {table === "apartments" && <ListingImport draft={draft} setDraft={setDraft} />}
+      {table === "items" && !hide.includes("product_url") && <ProductLinkImport draft={draft} setDraft={setDraft} />}
       {isFlight && <FlightLookup draft={draft} setDraft={setDraft} />}
       {table === "moves" && <MoveDistance fromZip={draft.from_zip} toZip={draft.to_zip} value={draft.distance_miles} onChange={(m) => set("distance_miles", m)} />}
       {table === "items" && (draft.image_url || draft.retail_price != null) ? (
@@ -510,25 +714,11 @@ export function EntityForm<T extends TableName>({
           </div>
         </div>
       ) : null}
-      {table === "books" && typeof draft.cover_url === "string" && draft.cover_url && (
-        <div className="flex gap-3">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={draft.cover_url} alt="" className="h-32 rounded-md shadow" />
-          {typeof draft.isbn === "string" && draft.isbn && (
-            <div className="text-sm">
-              <div className="mb-1 font-semibold">Check resale value:</div>
-              {bookPriceLinks(draft.isbn).map((l) => (
-                <a key={l.url} href={l.url} target="_blank" rel="noreferrer" className="block text-indigo-700 underline">
-                  {l.label}
-                </a>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-      {sections.map((s) => (
-        <fieldset key={s.name} className="space-y-3">
-          {s.name && <legend className="mb-2 text-sm font-bold text-gray-800">{s.name}</legend>}
+      {table === "books" && ((typeof draft.cover_url === "string" && draft.cover_url) || (typeof draft.isbn === "string" && draft.isbn)) ? (
+        <BookSources cover={String(draft.cover_url || "")} isbn={String(draft.isbn || "")} />
+      ) : null}
+      {sections.map((s, si) => {
+        const grid = (
           <div className="grid grid-cols-1 gap-3 @md:grid-cols-2">
             {s.fields.map((f) => (
               <div key={f.key} className={f.type === "textarea" || f.type === "media" || f.type === "tags" ? "@md:col-span-2" : ""}>
@@ -543,8 +733,32 @@ export function EntityForm<T extends TableName>({
               </div>
             ))}
           </div>
-        </fieldset>
-      ))}
+        );
+        if (collapsible && s.name) {
+          const filled = s.fields.filter((f) => {
+            const v = draft[f.key];
+            return v != null && v !== "" && v !== false && !(Array.isArray(v) && !v.length);
+          }).length;
+          return (
+            <details key={s.name} className="group rounded-2xl border border-gray-200 bg-white open:pb-4" open={si === 0}>
+              <summary className="flex min-h-12 cursor-pointer list-none items-center gap-2 px-4 text-[15px] font-semibold [&::-webkit-details-marker]:hidden">
+                <span className="flex-1">{s.name}</span>
+                <span className="text-[13px] font-normal text-gray-400">
+                  {filled}/{s.fields.length}
+                </span>
+                <span className="text-gray-400 transition group-open:rotate-90">›</span>
+              </summary>
+              <div className="px-4 pt-1">{grid}</div>
+            </details>
+          );
+        }
+        return (
+          <fieldset key={s.name} className="space-y-3">
+            {s.name && <legend className="mb-2 text-sm font-bold text-gray-800">{s.name}</legend>}
+            {grid}
+          </fieldset>
+        );
+      })}
       <div className="sheet-footer sticky bottom-0 -mx-5 flex gap-2 border-t border-gray-200 bg-white px-5 py-3">
         <button className="btn-primary flex-1" type="submit">
           {submitLabel ?? (row ? "Save changes" : `Add ${schema.singular.toLowerCase()}`)}

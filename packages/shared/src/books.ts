@@ -12,7 +12,9 @@ export interface BookInfo {
   format?: string;
   weight_oz?: number | null;
   list_price?: number | null;
-  source: 'openlibrary' | 'google' | 'none';
+  source: 'openlibrary' | 'google' | 'isbndb' | 'none';
+  /** Live merchant offers (ISBNdb Pro plans only). */
+  offers?: BookOffer[];
 }
 
 /** Maps a free-text binding ("Mass Market Paperback", "Hardback"…) to a BookFormat id. */
@@ -181,8 +183,90 @@ export function parseGoogleBooks(isbn: string, json: unknown): BookInfo | null {
   };
 }
 
-/** Looks up a book by ISBN using Open Library, falling back to Google Books. Never throws. */
-export async function lookupBook(rawIsbn: string, fetchImpl: FetchLike = fetch as unknown as FetchLike): Promise<BookInfo | null> {
+export interface BookOffer {
+  merchant: string;
+  condition: string;
+  total: number | null;
+  link: string;
+}
+
+/** Publication dates come as "2017", "May 3, 2017", "2017-05-03"… — keep just the 4-digit year. */
+export function yearOnly(published: string | null | undefined): string {
+  const m = /(1[5-9]\d\d|20\d\d)/.exec(published ?? '');
+  return m ? m[1]! : (published ?? '').trim();
+}
+
+const toNum = (v: unknown): number | null => {
+  const n = typeof v === 'number' ? v : Number(String(v ?? '').replace(/[^\d.]/g, ''));
+  return Number.isFinite(n) && n > 0 ? n : null;
+};
+
+function isbndbWeightOz(dims: unknown, text?: string): number | null {
+  const w = (dims && typeof dims === 'object' && !Array.isArray(dims) ? (dims as Record<string, unknown>).weight : null) as
+    | { unit?: string; value?: number | string }
+    | null
+    | undefined;
+  if (w && w.value != null) {
+    const viaUnit = parseWeightOz(`${w.value} ${w.unit ?? 'pounds'}`);
+    if (viaUnit) return viaUnit;
+  }
+  return parseWeightOz(/weight:\s*([^,]+)/i.exec(text ?? '')?.[1]);
+}
+
+/** Parses an ISBNdb `GET /book/{isbn}` response (https://api2.isbndb.com). */
+export function parseIsbndb(json: unknown): BookInfo | null {
+  const b = (json as { book?: Record<string, unknown> } | null)?.book;
+  const title = typeof b?.title === 'string' ? b.title : '';
+  if (!b || !title) return null;
+  const str = (v: unknown) => (typeof v === 'string' ? v : '');
+  const subjects = Array.isArray(b.subjects) ? (b.subjects as unknown[]).map(String).slice(0, 8) : [];
+  const lp = b.list_price as { amount?: number; currency?: string } | null | undefined;
+  const offers = Array.isArray(b.prices)
+    ? (b.prices as Record<string, unknown>[]).map((p) => ({ merchant: str(p.merchant), condition: str(p.condition), total: toNum(p.total ?? p.price), link: str(p.link) }))
+    : undefined;
+  const cover = str(b.image);
+  return {
+    isbn: str(b.isbn13) || str(b.isbn),
+    title,
+    subtitle: '',
+    authors: Array.isArray(b.authors) ? (b.authors as unknown[]).map(String) : [],
+    publisher: str(b.publisher),
+    published: yearOnly(str(b.date_published)),
+    pages: toNum(b.pages),
+    cover_url: /placeholder/i.test(cover) ? '' : cover,
+    subjects,
+    genre: guessGenre(subjects, title),
+    format: parseBookFormat(str(b.binding)),
+    weight_oz: isbndbWeightOz(b.dimensions_structured, str(b.dimensions)),
+    list_price: lp?.amount && (!lp.currency || lp.currency === 'USD') ? lp.amount : toNum(b.msrp),
+    offers: offers?.filter((o) => o.link),
+    source: 'isbndb',
+  };
+}
+
+/** Fills blanks in `a` with values from the other sources, in order. */
+export function mergeBookInfo(a: BookInfo, ...more: (BookInfo | null | undefined)[]): BookInfo {
+  const out = { ...a };
+  for (const b of more) {
+    if (!b) continue;
+    for (const k of Object.keys(b) as (keyof BookInfo)[]) {
+      const cur = out[k];
+      const empty = cur == null || cur === '' || (Array.isArray(cur) && cur.length === 0) || (k === 'genre' && cur === 'Other');
+      if (empty && b[k] != null && b[k] !== '') (out as Record<string, unknown>)[k] = b[k];
+    }
+  }
+  return out;
+}
+
+/**
+ * Looks up a book by ISBN using Open Library and Google Books (plus an optional extra source such as ISBNdb),
+ * merging whatever each one knows. Never throws.
+ */
+export async function lookupBook(
+  rawIsbn: string,
+  fetchImpl: FetchLike = fetch as unknown as FetchLike,
+  extra?: (isbn: string) => Promise<BookInfo | null>,
+): Promise<BookInfo | null> {
   const isbn = normalizeIsbn(rawIsbn);
   if (!isbn) return null;
   const get = async (url: string) => {
@@ -193,31 +277,47 @@ export async function lookupBook(rawIsbn: string, fetchImpl: FetchLike = fetch a
       return null;
     }
   };
-  const [data, edition, google] = await Promise.all([
+  const [data, edition, google, more] = await Promise.all([
     get(`https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&format=json&jscmd=data`),
     get(`https://openlibrary.org/isbn/${isbn}.json`),
     get(`https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}`),
+    extra ? extra(isbn).catch(() => null) : Promise.resolve(null),
   ]);
   const ol = data ? parseOpenLibrary(isbn, data) : null;
   const gb = google ? parseGoogleBooks(isbn, google) : null;
-  const info = ol ?? gb;
-  if (!info) return null;
+  const first = ol ?? more ?? gb;
+  if (!first) return null;
   const phys = edition ? parseOpenLibraryEdition(edition) : { weight_oz: null, pages: null };
+  const merged = mergeBookInfo(first, more, gb);
   return {
-    ...info,
-    pages: info.pages ?? phys.pages ?? gb?.pages ?? null,
-    format: phys.format ?? info.format,
-    weight_oz: phys.weight_oz ?? null,
-    list_price: info.list_price ?? gb?.list_price ?? null,
+    ...merged,
+    isbn,
+    published: yearOnly(merged.published),
+    pages: merged.pages ?? phys.pages ?? null,
+    format: phys.format ?? merged.format,
+    weight_oz: phys.weight_oz ?? merged.weight_oz ?? null,
+    list_price: merged.list_price ?? null,
   };
+}
+
+/** Sites that look a book up by ISBN (details, editions, covers). */
+export function bookLookupLinks(isbn: string): { label: string; url: string }[] {
+  return [
+    { label: 'ISBNdb', url: `https://isbndb.com/book/${isbn}` },
+    { label: 'ISBNsearch', url: `https://isbnsearch.org/isbn/${isbn}` },
+    { label: 'Open Library', url: `https://openlibrary.org/isbn/${isbn}` },
+    { label: 'Google Books', url: `https://www.google.com/search?tbm=bks&q=isbn:${isbn}` },
+  ];
 }
 
 /** Links for checking real-world resale prices of a book. */
 export function bookPriceLinks(isbn: string): { label: string; url: string }[] {
   return [
     { label: 'BookScouter (buyback offers)', url: `https://bookscouter.com/book/${isbn}` },
+    { label: 'DirectTextbook (compare prices)', url: `https://www.directtextbook.com/isbn/${isbn}` },
     { label: 'eBay sold listings', url: `https://www.ebay.com/sch/i.html?_nkw=${isbn}&LH_Sold=1&LH_Complete=1` },
     { label: 'Amazon', url: `https://www.amazon.com/s?k=${isbn}` },
     { label: 'AbeBooks', url: `https://www.abebooks.com/servlet/SearchResults?isbn=${isbn}` },
+    { label: 'ISBNsearch', url: `https://isbnsearch.org/isbn/${isbn}` },
   ];
 }

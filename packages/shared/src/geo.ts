@@ -108,7 +108,9 @@ export interface ListingInfo {
   bathrooms?: number;
   sqft?: number;
   phone?: string;
-  /** The real listing link (after unwrapping e-mail safe-links). */
+  /** True when the listing says pets (dogs/cats) are welcome. */
+  pets?: boolean;
+  /** Listing URL (after unwrapping e-mail safe-links). */
   url?: string;
   /** True when the site blocked us and only the link's own text was used. */
   partial?: boolean;
@@ -230,6 +232,9 @@ export function parseListingHtml(html: string, pageUrl: string): ListingInfo {
   }
   info.title = metaContent(html, ['og:title', 'twitter:title'])[0] ?? decode(/<title[^>]*>([^<]*)<\/title>/i.exec(html)?.[1] ?? '') ?? undefined;
   info.description = metaContent(html, ['og:description', 'description', 'twitter:description'])[0];
+  const petFlag = /"(?:petsAllowed|PetsAllowed|petFriendly|isPetFriendly|allowsPets)"\s*:\s*(true|false)/.exec(html)?.[1];
+  const pets = petFlag ? petFlag === 'true' : petsAllowed(info.description ?? '');
+  if (pets !== undefined) info.pets = pets;
   const lat = metaContent(html, ['place:location:latitude', 'og:latitude', 'geo.position'])[0];
   const lng = metaContent(html, ['place:location:longitude', 'og:longitude'])[0];
   if (lat && lng && Number.isFinite(Number(lat)) && Number.isFinite(Number(lng))) {
@@ -386,6 +391,7 @@ export function listingToApartmentPatch(info: ListingInfo, current: Partial<Apar
   if (blank(current.bathrooms) && info.bathrooms != null && info.bathrooms < 20) patch.bathrooms = info.bathrooms;
   if (blank(current.sqft) && info.sqft && info.sqft > 100 && info.sqft < 20000) patch.sqft = info.sqft;
   if (blank(current.phone) && info.phone) patch.phone = info.phone;
+  if (!current.pets_allowed && info.pets) patch.pets_allowed = true;
   if (current.latitude == null && info.lat != null && info.lng != null) {
     patch.latitude = info.lat;
     patch.longitude = info.lng;
@@ -630,6 +636,13 @@ export function mergeListing(primary: ListingInfo, fallback: ListingInfo): Listi
 }
 
 /** Copy-pasted listing text (Ctrl+A, Ctrl+C on the listing page) → rent, beds, baths, size, address. */
+/** Reads a listing's pet policy: true = pets welcome, false = no pets, undefined = not mentioned. */
+export function petsAllowed(text: string): boolean | undefined {
+  if (/\bno pets\b|pets?\s+(?:are\s+)?not\s+(?:allowed|permitted|accepted)|\bpet[- ]free\b/i.test(text)) return false;
+  if (/\bpets?\s+(?:are\s+)?(?:allowed|welcome|friendly|ok|okay|accepted|considered)\b|\bpet[- ]friendly\b|\b(?:dogs?|cats?)\s+(?:are\s+)?(?:allowed|welcome|ok|okay)\b|\bdog park\b|\bpet (?:rent|deposit|fee)\b/i.test(text)) return true;
+  return undefined;
+}
+
 export function parseListingText(text: string): ListingInfo {
   const t = text.replace(/\u00a0/g, ' ');
   const info: ListingInfo = { images: [] };
@@ -650,6 +663,8 @@ export function parseListingText(text: string): ListingInfo {
   if (sqft) info.sqft = num(sqft);
   const phone = /\(?\b\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}\b/.exec(t)?.[0];
   if (phone) info.phone = phone;
+  const pets = petsAllowed(t);
+  if (pets !== undefined) info.pets = pets;
   if (info.address) {
     // Listing sites put the property name on the line just above the street address.
     const lines = t.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);

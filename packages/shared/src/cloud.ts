@@ -62,15 +62,32 @@ export async function signedMediaUrl(sb: SupabaseClient, path: string): Promise<
   return data?.signedUrl ?? null;
 }
 
+/** PostgREST "Could not find the 'x' column of 'items' in the schema cache" (PGRST204) → "x". */
+export function missingColumn(error: { code?: string; message?: string }): string | null {
+  const m = /could not find the '([^']+)' column/i.exec(error.message ?? '');
+  return m ? m[1]! : null;
+}
+
 export function supabaseAdapter(
   sb: SupabaseClient,
   householdId: string,
   readMedia: (ref: MediaRef) => Promise<Blob | ArrayBuffer>,
 ): RemoteAdapter {
+  // Columns the cloud database doesn't have yet (a newer app before its migration ran) — kept on-device only.
+  const missing = new Map<string, Set<string>>();
   return {
     async push(table, rows) {
-      const { error } = await sb.from(table).upsert(rows as never[], { onConflict: 'id' });
-      if (error) throw new Error(`${table}: ${error.message}`);
+      const skip = missing.get(table) ?? new Set<string>();
+      for (let attempt = 0; attempt < 8; attempt++) {
+        const body = skip.size ? rows.map((r) => Object.fromEntries(Object.entries(r).filter(([k]) => !skip.has(k)))) : rows;
+        const { error } = await sb.from(table).upsert(body as never[], { onConflict: 'id' });
+        if (!error) return;
+        const col = missingColumn(error);
+        if (!col || skip.has(col)) throw new Error(`${table}: ${error.message}`);
+        skip.add(col);
+        missing.set(table, skip);
+      }
+      throw new Error(`${table}: too many missing columns — run the latest Supabase migration`);
     },
     async pull(table, since) {
       const out: (BaseRow & { server_updated_at?: string })[] = [];

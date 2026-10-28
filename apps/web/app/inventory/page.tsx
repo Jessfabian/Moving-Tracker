@@ -434,6 +434,18 @@ function PriceIdea({ item, onUse }: { item: Item; onUse: (row: Item) => void }) 
       </div>
       <p className="mt-1 text-gray-600">{idea.why}</p>
       {idea.tip && <p className="mt-1 text-gray-500">Tip: {idea.tip}</p>}
+      <details className="mt-2 rounded-xl bg-white/70 px-3 py-1">
+        <summary className="min-h-11 cursor-pointer content-center text-[13px] font-semibold text-indigo-700">How is this calculated?</summary>
+        <ol className="list-decimal space-y-1 pb-2 pl-5 text-[13px] text-gray-600">
+          {idea.steps.map((s) => (
+            <li key={s}>{s}</li>
+          ))}
+          <li>
+            Keep or sell: it weighs ~{idea.lbs} lb, so moving it costs ~{formatMoney(idea.moveCost)} at ~$0.75/lb. If that&apos;s close to what it sells for, selling here and re-buying is cheaper.
+          </li>
+        </ol>
+        {!item.purchase_date && <p className="pb-2 text-[12px] text-gray-500">Tip: add a purchase date — a 1-year-old TV and a 7-year-old TV are priced very differently.</p>}
+      </details>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         {item.est_value !== idea.likely && (
           <button type="button" className="btn-secondary py-1 text-xs" onClick={() => {

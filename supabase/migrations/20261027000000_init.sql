@@ -189,6 +189,10 @@ alter table public.books add column if not exists weight_oz numeric;
 alter table public.books add column if not exists list_price numeric;
 alter table public.books add column if not exists sale_channel text not null default '';
 alter table public.books add column if not exists sale_id text;
+alter table public.items add column if not exists purchase_date date;
+alter table public.items add column if not exists purchase_price numeric;
+alter table public.items add column if not exists product_url text not null default '';
+alter table public.books add column if not exists photos jsonb not null default '[]';
 
 create table if not exists public.book_sales (
   buyer_name text not null default '', buyer_email text not null default '', buyer_phone text not null default '',

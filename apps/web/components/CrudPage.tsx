@@ -38,6 +38,12 @@ export interface CrudPageProps<T extends TableName> {
   onSaved?: (r: TableMap[T] | null) => void;
   /** Always open the form in a slide-over drawer instead of the side pane on wide screens. */
   drawerForm?: boolean;
+  /** Open existing rows read-only (renderDetail) with an Edit button, instead of straight into the form. */
+  viewFirst?: boolean;
+  /** Extra controls next to search & filters (e.g. a sort picker). */
+  toolbar?: ReactNode;
+  /** Rendered after the list (e.g. an archive of ruled-out rows). */
+  after?: ReactNode | ((api: CrudApi<T>) => ReactNode);
 }
 
 export interface CrudApi<T extends TableName> {
@@ -46,7 +52,7 @@ export interface CrudApi<T extends TableName> {
 }
 
 export function CrudPage<T extends TableName>(props: CrudPageProps<T>) {
-  const { table, columns = [], filters = [], groupBy, groupOrder, groupAction, formTitle, addLabel, sort, where, initial, actions, top, renderBadge, renderDetail, renderCard,   emptyText, hideFields, onSaved, drawerForm } = props;
+  const { table, columns = [], filters = [], groupBy, groupOrder, groupAction, formTitle, addLabel, sort, where, initial, actions, top, renderBadge, renderDetail, renderCard, emptyText, hideFields, onSaved, drawerForm, viewFirst, toolbar, after } = props;
   const schema = SCHEMAS[table];
   const db = useDb();
   const lookup = useMemo(() => makeLookup(db), [db]);
@@ -86,6 +92,8 @@ export function CrudPage<T extends TableName>(props: CrudPageProps<T>) {
   }, [rows, groupBy, groupOrder, schema.fields, lookup]);
 
   const current = editing && editing !== "new" ? (all.find((r) => r.id === editing) ?? null) : null;
+  const [editId, setEditId] = useState<string | null>(null);
+  const viewing = !!(viewFirst && renderDetail && current && editId !== current.id);
   const formOpen = editing === "new" || !!current;
   // New records always open in a sheet so it's obvious something opened; the side pane is for viewing/editing existing rows.
   const paneOpen = twoPane && !!current;
@@ -96,15 +104,31 @@ export function CrudPage<T extends TableName>(props: CrudPageProps<T>) {
     const r = paneRef.current.getBoundingClientRect();
     if (r.top > window.innerHeight * 0.6 || r.bottom < 80) paneRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [paneOpen, editing]);
-  const drawerTitle = formTitle ? formTitle(current, addInitial) : current ? String((current as unknown as Row)[schema.titleField] || schema.singular) : `New ${schema.singular.toLowerCase()}`;
+  const baseTitle = formTitle ? formTitle(current, addInitial) : current ? String((current as unknown as Row)[schema.titleField] || schema.singular) : `New ${schema.singular.toLowerCase()}`;
+  const drawerTitle = viewFirst && current && !viewing ? `Edit ${baseTitle}` : baseTitle;
   const close = () => {
     setEditing(null);
+    setEditId(null);
     setAddInitial(undefined);
   };
 
-  const form = formOpen ? (
+  const form = !formOpen ? null : viewing && current ? (
     <div>
-      {current && renderDetail && <div className="mb-5">{renderDetail(current)}</div>}
+      {renderDetail!(current)}
+      <div className="sheet-footer sticky bottom-0 -mx-5 mt-5 flex gap-2 border-t border-gray-200 bg-white px-5 py-3">
+        <button type="button" className="btn-primary flex-1" onClick={() => setEditId(current.id)}>
+          ✏️ Edit
+        </button>
+      </div>
+    </div>
+  ) : (
+    <div>
+      {viewFirst && current && (
+        <button type="button" className="mb-3 min-h-11 text-sm font-semibold text-accent" onClick={() => setEditId(null)}>
+          ‹ Back to details
+        </button>
+      )}
+      {current && renderDetail && !viewFirst && <div className="mb-5">{renderDetail(current)}</div>}
       <EntityForm
         key={editing === "new" ? `new:${JSON.stringify(addInitial ?? {})}` : editing}
         table={table}
@@ -112,12 +136,17 @@ export function CrudPage<T extends TableName>(props: CrudPageProps<T>) {
         initial={addInitial ? { ...initial, ...addInitial } : initial}
         hide={hideFields}
         onDone={(r) => {
-          close();
+          if (viewFirst && renderDetail && r) {
+            // Saved: show the finished record instead of closing, so it's clear what was added/changed.
+            setEditId(null);
+            setAddInitial(undefined);
+            setEditing(r.id);
+          } else close();
           onSaved?.(r);
         }}
       />
     </div>
-  ) : null;
+  );
 
   const photoKey = schema.fields.find((f) => f.type === "media")?.key;
 
@@ -225,6 +254,7 @@ export function CrudPage<T extends TableName>(props: CrudPageProps<T>) {
         <span className="self-center text-sm text-gray-500">
           {rows.length} of {all.length}
         </span>
+        {toolbar}
       </div>
       {twoPane ? (
         <div className="grid grid-cols-2 gap-7">
@@ -250,6 +280,7 @@ export function CrudPage<T extends TableName>(props: CrudPageProps<T>) {
       ) : (
         list
       )}
+      {typeof after === "function" ? after(api) : after}
       <Drawer open={sheetOpen} onClose={close} title={drawerTitle}>
         {sheetOpen && form}
       </Drawer>
