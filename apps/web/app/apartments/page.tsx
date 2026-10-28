@@ -937,7 +937,7 @@ function Comparison() {
 function Checklist() {
   const [open, setOpen] = useState(false);
   return (
-    <div className="card mb-5">
+    <div className="card mt-5">
       <button className="flex w-full items-center justify-between text-left text-sm font-bold" onClick={() => setOpen(!open)}>
         <span>🔎 Touring & lease checklist</span>
         <span className="text-slate-400">{open ? "▲" : "▼"}</span>

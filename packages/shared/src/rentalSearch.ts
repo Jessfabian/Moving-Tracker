@@ -125,7 +125,7 @@ export function parseRentComSearch(html: string): RentalResult[] {
         sqftMax: sqT1,
         homeType: TYPES[str(l.propertyType)] ?? 'apartment',
         phone: str(l.phoneDesktopText) || str(l.phoneMobileText),
-        manager: str(l.propertyManagementCompany?.name),
+        manager: str(l.propertyManagementCompany?.name).replace(/\s*https?:\/\/\S+/g, '').trim(),
         amenities: amen.filter((a) => !/pet/i.test(a)).slice(0, 12),
         images: (Array.isArray(l.optimizedPhotos) ? l.optimizedPhotos : [])
           .map((p: { id?: string }) => (p?.id ? `https://i.rent.com/t_3x2_fixed_webp_lg/${p.id}` : ''))
