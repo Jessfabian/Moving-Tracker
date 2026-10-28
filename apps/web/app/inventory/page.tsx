@@ -1,9 +1,10 @@
 "use client";
 
-import { DISPOSITION_COLORS, DISPOSITIONS, formatMoney, guessItemCategory, ITEM_CATEGORIES, itemPriceIdea, optionLabel, productToItemPatch, sum, type Item, type Room } from "@moving/shared";
+import { DISPOSITION_COLORS, DISPOSITIONS, formatMoney, guessItemCategory, ITEM_CATEGORIES, itemPriceIdea, itemPriceQuery, optionLabel, productToItemPatch, sum, type Item, type Room } from "@moving/shared";
 import { useMemo, useRef, useState } from "react";
 import { lookupProduct } from "@/lib/lookup";
 import { EntityForm } from "@/components/EntityForm";
+import { LivePrices } from "@/components/LivePrices";
 import { MediaThumb } from "@/components/Media";
 import { RoomScan } from "@/components/RoomScan";
 import { Scanner } from "@/components/Scanner";
@@ -461,6 +462,25 @@ function PriceIdea({ item, onUse }: { item: Item; onUse: (row: Item) => void }) 
           </a>
         ))}
       </div>
+      <LivePrices
+        className="mt-3"
+        kind="item"
+        query={itemPriceQuery(item)}
+        actions={(r) => {
+          const typical = r.summary.newMedian;
+          if (typical == null) return [];
+          const used = itemPriceIdea({ ...item, retail_price: typical }).likely;
+          return [
+            {
+              label: `Use ${formatMoney(typical)} new → ${formatMoney(used)} used`,
+              onClick: () => {
+                const row = store.update("items", item.id, { retail_price: typical, est_value: used });
+                if (row) onUse(row);
+              },
+            },
+          ];
+        }}
+      />
     </div>
   );
 }

@@ -20,6 +20,7 @@ import {
 } from "@moving/shared";
 import { useMemo, useState } from "react";
 import { EntityForm } from "@/components/EntityForm";
+import { LivePrices } from "@/components/LivePrices";
 import { StatusPill } from "@/components/CrudPage";
 import { Drawer, Empty } from "@/components/ui";
 import { printHtml } from "@/lib/media";
@@ -89,6 +90,14 @@ export function PriceHint({ book }: { book: Book }) {
                 </a>
               ))}
             </div>
+          )}
+          {book.isbn && (
+            <LivePrices
+              className="mt-2"
+              kind="book"
+              isbn={book.isbn}
+              actions={(r) => (r.summary.suggested != null && r.summary.suggested !== current ? [{ label: `Use ${formatMoney(r.summary.suggested)}`, onClick: () => store.update("books", book.id, { est_value: r.summary.suggested }) }] : [])}
+            />
           )}
         </div>
       )}

@@ -43,13 +43,15 @@ const BROWSER_HEADERS = {
 
 export type PageResult = { ok: true; html: string; url: URL } | { ok: false; status: number; reason: "blocked" | "redirect" | "status" | "network" };
 
-/** Fetches a public web page like a browser would, re-checking every redirect hop. */
-export async function fetchPage(target: URL, timeoutMs = 12000): Promise<PageResult> {
+/** Fetches a public web page like a browser would, re-checking every redirect hop.
+ *  `plain` sends only the basic browser headers — some stores (Walmart) block the full navigation header set. */
+export async function fetchPage(target: URL, timeoutMs = 12000, opts: { plain?: boolean } = {}): Promise<PageResult> {
+  const headers = opts.plain ? { "user-agent": BROWSER_HEADERS["user-agent"], accept: "text/html", "accept-language": "en-US" } : BROWSER_HEADERS;
   try {
     let url = target;
     let res: Response | null = null;
     for (let hop = 0; hop < 5; hop++) {
-      res = await fetch(url, { redirect: "manual", signal: AbortSignal.timeout(timeoutMs), headers: BROWSER_HEADERS });
+      res = await fetch(url, { redirect: "manual", signal: AbortSignal.timeout(timeoutMs), headers });
       const loc = res.status >= 300 && res.status < 400 ? res.headers.get("location") : null;
       if (!loc) break;
       const next = await safeUrl(new URL(loc, url).toString());

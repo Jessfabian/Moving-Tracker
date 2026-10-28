@@ -1,7 +1,8 @@
 "use client";
 
 import { BOOK_FORMATS, BOOK_GENRES, DISPOSITIONS, SCHEMAS, type Book, type Option } from "@moving/shared";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { fetchLivePrices } from "@/lib/livePrices";
 import { useDb, useStore } from "@/lib/store-context";
 
 const KEEP = "__keep__";
@@ -20,6 +21,71 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 
 const sel = "ios-popup min-h-9 w-[58%] min-w-0 flex-none truncate text-right [text-align-last:right]";
 const txt = "min-h-9 w-[58%] min-w-0 flex-none rounded-lg bg-ink/[0.06] px-3 text-right text-[15px] outline-none placeholder:text-gray-400 focus:bg-white focus:ring-2 focus:ring-ink/20";
+
+/** Checks live store prices for every selected book and fills in its resale value. */
+function BulkLivePrices({ ids }: { ids: string[] }) {
+  const db = useDb();
+  const store = useStore();
+  const [state, setState] = useState<{ done: number; priced: number; total: number; running: boolean } | null>(null);
+  const stop = useRef(false);
+  const books = db.books.filter((b) => ids.includes(b.id) && b.isbn);
+
+  const run = async () => {
+    stop.current = false;
+    const queue = [...books];
+    let done = 0;
+    let priced = 0;
+    setState({ done, priced, total: queue.length, running: true });
+    const worker = async () => {
+      for (let b = queue.shift(); b && !stop.current; b = queue.shift()) {
+        try {
+          const r = await fetchLivePrices({ isbn: b.isbn });
+          if (r.summary.suggested != null) {
+            store.update("books", b.id, { est_value: r.summary.suggested });
+            priced++;
+          }
+        } catch {
+          /* skip books the stores don't answer for */
+        }
+        done++;
+        setState({ done, priced, total: books.length, running: true });
+      }
+    };
+    await Promise.all([worker(), worker()]);
+    setState({ done, priced, total: books.length, running: false });
+  };
+
+  return (
+    <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 p-3 text-sm">
+      <div className="font-bold">💲 Live prices</div>
+      <p className="mt-0.5 text-[13px] text-slate-600">
+        Checks AbeBooks, ThriftBooks and ValoreBooks for each selected book and sets its resale value to the suggested price. Free — no account needed.
+      </p>
+      {state && (
+        <div className="mt-2">
+          <div className="h-2 overflow-hidden rounded-full bg-white ring-1 ring-emerald-100">
+            <div className="h-full bg-emerald-500 transition-all" style={{ width: `${state.total ? (state.done / state.total) * 100 : 100}%` }} />
+          </div>
+          <p className="mt-1 text-[12px] text-slate-600">
+            {state.done} / {state.total} checked · {state.priced} priced{!state.running && state.done < state.total ? " · stopped" : ""}
+            {!state.running && state.done === state.total ? " · done ✓" : ""}
+          </p>
+        </div>
+      )}
+      <div className="mt-2 flex gap-2">
+        {state?.running ? (
+          <button type="button" className="btn-secondary min-h-11 flex-1" onClick={() => (stop.current = true)}>
+            Stop
+          </button>
+        ) : (
+          <button type="button" className="min-h-11 flex-1 rounded-xl bg-emerald-600 px-3 font-semibold text-white disabled:opacity-50" disabled={!books.length} onClick={() => void run()}>
+            {books.length ? `Get live prices for ${books.length} book${books.length === 1 ? "" : "s"}` : "No ISBNs in this selection"}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
 
 /** Change plan, genre, author… on many books at once. Blank / "No change" fields are left alone. */
 export function BulkEdit({ ids, onDone }: { ids: string[]; onDone: () => void }) {
@@ -140,6 +206,7 @@ export function BulkEdit({ ids, onDone }: { ids: string[]; onDone: () => void })
           <input className={txt} placeholder="No change" inputMode="numeric" maxLength={4} value={text("published")} onChange={(e) => set("published", e.target.value.replace(/\D/g, ""))} />
         </Row>
       </div>
+      <BulkLivePrices ids={ids} />
       <div className="sheet-footer flex gap-2">
         <button type="button" className="btn-secondary flex-1" onClick={onDone}>
           Cancel

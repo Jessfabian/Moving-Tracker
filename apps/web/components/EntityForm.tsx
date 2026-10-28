@@ -7,7 +7,9 @@ import {
   bookPriceLinks,
   bookLookupLinks,
   yearOnly,
-  type BookOffer,
+  itemPriceIdea,
+  itemPriceQuery,
+  type Item,
   normalizeIsbn,
   productToItemPatch,
   apartmentAddress,
@@ -24,7 +26,7 @@ import {
   type TableName,
 } from "@moving/shared";
 import { useMemo, useState } from "react";
-import { bookPatch, isbndbLookup, lookupBook } from "@/lib/books";
+import { bookPatch, lookupBook } from "@/lib/books";
 import { fetchListing, geocodeOne } from "@/lib/geo";
 import { imageUrlToMedia } from "@/lib/media";
 import { lookupProduct } from "@/lib/lookup";
@@ -32,6 +34,7 @@ import { useDb, useStore } from "@/lib/store-context";
 import { AddressInput, ZipInput } from "./AddressInput";
 import { FlightLookup } from "./Flights";
 import { ImageUrlsField } from "./Gallery";
+import { LivePrices } from "./LivePrices";
 import { MediaField } from "./Media";
 import { MoveDistance } from "./MoveDistance";
 import { Scanner } from "./Scanner";
@@ -443,22 +446,10 @@ function ListingImport({ draft, setDraft }: { draft: Row; setDraft: (fn: (d: Row
   );
 }
 
-function BookSources({ cover, isbn }: { cover: string; isbn: string }) {
-  const [offers, setOffers] = useState<BookOffer[] | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
-  const livePrices = async () => {
-    setBusy(true);
-    setMsg(null);
-    const info = await isbndbLookup(isbn, { prices: true });
-    setBusy(false);
-    if (!info) return setMsg("ISBNdb didn’t answer — add your ISBNdb key in Settings, or use the links.");
-    const list = (info.offers ?? []).filter((o) => o.total != null).sort((a, b) => (a.total ?? 0) - (b.total ?? 0));
-    setOffers(list);
-    if (!list.length) setMsg(info.list_price ? `No live offers on your ISBNdb plan · list price ${formatMoney(info.list_price)}` : "No live offers on your ISBNdb plan (prices need ISBNdb Pro).");
-  };
+function BookSources({ cover, isbn, onUse }: { cover: string; isbn: string; onUse: (v: number) => void }) {
   const linkCls = "rounded-full bg-white px-2.5 py-1 text-xs font-medium text-indigo-700 ring-1 ring-slate-200";
   return (
+    <div className="space-y-2">
     <div className="flex gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
       {cover && (
         // eslint-disable-next-line @next/next/no-img-element
@@ -486,24 +477,16 @@ function BookSources({ cover, isbn }: { cover: string; isbn: string }) {
               ))}
             </div>
           </div>
-          <button type="button" className="btn-secondary text-xs" disabled={busy} onClick={() => void livePrices()}>
-            {busy ? "Checking stores…" : "💲 Live prices (ISBNdb)"}
-          </button>
-          {offers && offers.length > 0 && (
-            <ul className="divide-y divide-slate-200 rounded-xl bg-white text-xs ring-1 ring-slate-200">
-              {offers.slice(0, 6).map((o, i) => (
-                <li key={i} className="flex items-center justify-between gap-2 px-3 py-2">
-                  <a href={o.link} target="_blank" rel="noreferrer" className="min-w-0 truncate text-indigo-700">
-                    {o.merchant || "Store"} <span className="text-slate-500">· {o.condition || "—"}</span>
-                  </a>
-                  <b className="flex-none">{formatMoney(o.total ?? 0)}</b>
-                </li>
-              ))}
-            </ul>
-          )}
-          {msg && <p className="text-xs text-slate-500">{msg}</p>}
         </div>
       )}
+    </div>
+    {isbn && (
+      <LivePrices
+        kind="book"
+        isbn={isbn}
+        actions={(r) => (r.summary.suggested != null ? [{ label: `Use ${formatMoney(r.summary.suggested)} as resale value`, onClick: () => onUse(r.summary.suggested!) }] : [])}
+      />
+    )}
     </div>
   );
 }
@@ -621,7 +604,7 @@ export function EntityForm<T extends TableName>({
         return;
       }
       setDraft((d) => ({ ...d, ...bookPatch(info) }));
-      setLookupMsg(`Found “${info.title}”${info.source === "isbndb" ? " on ISBNdb" : ""}`);
+      setLookupMsg(`Found “${info.title}”`);
     } else {
       set("barcode", code);
       const p = await lookupProduct(code);
@@ -714,8 +697,25 @@ export function EntityForm<T extends TableName>({
           </div>
         </div>
       ) : null}
+      {table === "items" && String(draft.name ?? "").trim().length >= 3 ? (
+        <LivePrices
+          kind="item"
+          query={itemPriceQuery(draft)}
+          actions={(r) => {
+            const typical = r.summary.newMedian;
+            if (typical == null) return [];
+            const used = itemPriceIdea({ ...(draft as unknown as Item), retail_price: typical }).likely;
+            return [
+              {
+                label: `Use ${formatMoney(typical)} new → ${formatMoney(used)} used`,
+                onClick: () => setDraft((d) => ({ ...d, retail_price: typical, est_value: used })),
+              },
+            ];
+          }}
+        />
+      ) : null}
       {table === "books" && ((typeof draft.cover_url === "string" && draft.cover_url) || (typeof draft.isbn === "string" && draft.isbn)) ? (
-        <BookSources cover={String(draft.cover_url || "")} isbn={String(draft.isbn || "")} />
+        <BookSources cover={String(draft.cover_url || "")} isbn={String(draft.isbn || "")} onUse={(v) => set("est_value", v)} />
       ) : null}
       {sections.map((s, si) => {
         const grid = (

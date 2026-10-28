@@ -6,48 +6,7 @@ import { useEffect, useState } from "react";
 import { NavPositionPicker } from "@/components/NavPositionPicker";
 import { PageHeader } from "@/components/ui";
 import { idbKV } from "@/lib/kv";
-import { isbndbLookup } from "@/lib/books";
-import { useLocalState } from "@/lib/hooks";
 import { useApp, useSyncStatus } from "@/lib/store-context";
-
-function IsbndbKey() {
-  const [saved, setSaved] = useLocalState("isbndb-key", "");
-  const [draft, setDraft] = useState<string | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
-  const value = draft ?? saved;
-  const test = async () => {
-    setMsg("Testing…");
-    const info = await isbndbLookup("9780134093413");
-    setMsg(info ? `✅ Works — found “${info.title}”.` : "❌ ISBNdb didn’t accept that key (or the plan is inactive).");
-  };
-  return (
-    <section className="card space-y-3">
-      <h2 className="font-bold">📚 Book lookup (ISBNdb)</h2>
-      <p className="text-sm text-gray-600">
-        Scans already check Open Library and Google Books for free. Add an{" "}
-        <a className="text-indigo-700 underline" href="https://isbndb.com/isbn-database" target="_blank" rel="noreferrer">
-          ISBNdb
-        </a>{" "}
-        API key to also check their database of 100M+ books — it fills in weight, binding and list price more often, and Pro plans add live store prices. The key stays on this device.
-      </p>
-      <div className="flex gap-2">
-        <input className="input min-w-0 flex-1" type="password" autoComplete="off" placeholder="Paste your ISBNdb REST key" value={value} onChange={(e) => setDraft(e.target.value)} />
-        <button
-          className="btn-secondary"
-          onClick={() => {
-            setSaved(value.trim());
-            setDraft(null);
-            if (value.trim()) void test();
-            else setMsg("Key removed.");
-          }}
-        >
-          Save
-        </button>
-      </div>
-      {msg && <p className="text-sm">{msg}</p>}
-    </section>
-  );
-}
 
 export default function SettingsPage() {
   const app = useApp();
@@ -104,7 +63,6 @@ export default function SettingsPage() {
         <NavPositionPicker />
       </section>
 
-      <IsbndbKey />
 
       <section className="card space-y-4">
         <h2 className="font-bold">☁️ Storage & family sharing</h2>
