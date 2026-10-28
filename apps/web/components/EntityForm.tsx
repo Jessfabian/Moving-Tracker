@@ -4,8 +4,8 @@ import {
   DEFAULTS,
   SCHEMAS,
   formatMoney,
-  bookPriceLinks,
-  bookLookupLinks,
+  BOOK_FORMATS,
+  optionLabel,
   yearOnly,
   itemPriceIdea,
   itemPriceQuery,
@@ -446,47 +446,78 @@ function ListingImport({ draft, setDraft }: { draft: Row; setDraft: (fn: (d: Row
   );
 }
 
-function BookSources({ cover, isbn, onUse }: { cover: string; isbn: string; onUse: (v: number) => void }) {
-  const linkCls = "rounded-full bg-white px-2.5 py-1 text-xs font-medium text-indigo-700 ring-1 ring-slate-200";
+/** Shows a cover; blank placeholder images (1×1 "no cover" gifs) or broken links fall back to a "Find cover" button. */
+function CoverImg({ src, onMissing }: { src: string; onMissing?: () => void }) {
+  const [bad, setBad] = useState(false);
+  if (bad)
+    return (
+      <button type="button" onClick={onMissing} disabled={!onMissing} className="flex h-36 w-24 flex-none flex-col items-center justify-center gap-1 rounded-md bg-slate-100 px-1 text-center text-[11px] text-slate-500">
+        <span className="text-2xl">📕</span>
+        {onMissing ? "Find cover" : "No cover"}
+      </button>
+    );
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt=""
+      className="h-36 w-24 flex-none rounded-md bg-slate-100 object-cover shadow"
+      onError={() => setBad(true)}
+      onLoad={(e) => e.currentTarget.naturalWidth < 10 && setBad(true)}
+    />
+  );
+}
+
+/** Book summary: cover + the details we found, then live prices (fetched automatically). */
+function BookOverview({ draft, onUse, onLookup }: { draft: Row; onUse: (v: number) => void; onLookup: () => void }) {
+  const cover = typeof draft.cover_url === "string" ? draft.cover_url : "";
+  const isbn = normalizeIsbn(String(draft.isbn ?? "")) ?? "";
+  const authors = Array.isArray(draft.authors) ? (draft.authors as string[]).filter(Boolean).join(", ") : String(draft.authors ?? "");
+  const meta = [
+    draft.published ? yearOnly(String(draft.published)) : "",
+    String(draft.publisher ?? ""),
+    draft.pages ? `${draft.pages} pages` : "",
+    draft.format ? optionLabel(BOOK_FORMATS, draft.format) : "",
+  ].filter(Boolean);
   return (
     <div className="space-y-2">
-    <div className="flex gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
-      {cover && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={cover} alt="" className="h-32 flex-none rounded-md shadow" />
-      )}
-      {isbn && (
-        <div className="min-w-0 flex-1 space-y-2 text-sm">
-          <div>
-            <div className="mb-1 font-semibold">Check resale prices</div>
-            <div className="flex flex-wrap gap-1.5">
-              {bookPriceLinks(isbn).map((l) => (
-                <a key={l.url} href={l.url} target="_blank" rel="noreferrer" className={linkCls}>
-                  {l.label.replace(/ \(.*\)/, "")} ↗
-                </a>
-              ))}
-            </div>
-          </div>
-          <div>
-            <div className="mb-1 font-semibold">Look up details</div>
-            <div className="flex flex-wrap gap-1.5">
-              {bookLookupLinks(isbn).map((l) => (
-                <a key={l.url} href={l.url} target="_blank" rel="noreferrer" className={linkCls}>
-                  {l.label} ↗
-                </a>
-              ))}
-            </div>
+      <div className="flex gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+        {cover ? (
+          <CoverImg key={cover} src={cover} onMissing={isbn ? onLookup : undefined} />
+        ) : (
+          <button type="button" onClick={onLookup} disabled={!isbn} className="flex h-36 w-24 flex-none flex-col items-center justify-center gap-1 rounded-md bg-slate-100 px-1 text-center text-[11px] text-slate-500">
+            <span className="text-2xl">📕</span>
+            {isbn ? "Find cover" : "No cover"}
+          </button>
+        )}
+        <div className="min-w-0 flex-1 space-y-1 text-sm">
+          <div className="leading-snug font-semibold break-words">{String(draft.title || "Untitled")}</div>
+          {draft.subtitle ? <div className="text-[13px] leading-snug text-slate-500">{String(draft.subtitle)}</div> : null}
+          {authors && <div className="text-[13px] text-slate-700">by {authors}</div>}
+          {meta.length > 0 && <div className="text-[12px] text-slate-500">{meta.join(" · ")}</div>}
+          <div className="flex flex-wrap gap-x-3 gap-y-0.5 pt-1 text-[12px]">
+            {isbn && <span className="text-slate-500">ISBN {isbn}</span>}
+            {draft.list_price != null && draft.list_price !== "" && (
+              <span>
+                Cover price <b>{formatMoney(Number(draft.list_price))}</b>
+              </span>
+            )}
+            {draft.est_value != null && draft.est_value !== "" && (
+              <span>
+                Resale <b className="text-emerald-700">{formatMoney(Number(draft.est_value))}</b>
+              </span>
+            )}
           </div>
         </div>
+      </div>
+      {isbn && (
+        <LivePrices
+          auto
+          kind="book"
+          isbn={isbn}
+          actions={(r) => (r.summary.suggested != null ? [{ label: `Use ${formatMoney(r.summary.suggested)} as resale value`, onClick: () => onUse(r.summary.suggested!) }] : [])}
+        />
       )}
-    </div>
-    {isbn && (
-      <LivePrices
-        kind="book"
-        isbn={isbn}
-        actions={(r) => (r.summary.suggested != null ? [{ label: `Use ${formatMoney(r.summary.suggested)} as resale value`, onClick: () => onUse(r.summary.suggested!) }] : [])}
-      />
-    )}
     </div>
   );
 }
@@ -603,8 +634,9 @@ export function EntityForm<T extends TableName>({
         setLookupMsg("No match found — enter details manually.");
         return;
       }
-      setDraft((d) => ({ ...d, ...bookPatch(info) }));
-      setLookupMsg(`Found “${info.title}”`);
+      const hadCover = !!draft.cover_url && !/covers\.openlibrary\.org\/b\/isbn\/(?!.*default=false)/.test(String(draft.cover_url));
+      setDraft((d) => ({ ...d, ...bookPatch(info), cover_url: info.cover_url || d.cover_url || "" }));
+      setLookupMsg(`Found “${info.title}”${!hadCover ? (info.cover_url ? " · cover found" : " · no cover anywhere yet") : ""}`);
     } else {
       set("barcode", code);
       const p = await lookupProduct(code);
@@ -714,8 +746,8 @@ export function EntityForm<T extends TableName>({
           }}
         />
       ) : null}
-      {table === "books" && ((typeof draft.cover_url === "string" && draft.cover_url) || (typeof draft.isbn === "string" && draft.isbn)) ? (
-        <BookSources cover={String(draft.cover_url || "")} isbn={String(draft.isbn || "")} onUse={(v) => set("est_value", v)} />
+      {table === "books" && (draft.title || draft.isbn) ? (
+        <BookOverview draft={draft} onUse={(v) => set("est_value", v)} onLookup={() => void runLookup(String(draft.isbn))} />
       ) : null}
       {sections.map((s, si) => {
         const grid = (

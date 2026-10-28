@@ -82,17 +82,8 @@ export function PriceHint({ book }: { book: Book }) {
             ))}
           </ul>
           {book.isbn && (
-            <div className="mt-1.5 flex flex-wrap gap-x-2 gap-y-1">
-              <span className="text-gray-400">Check comps:</span>
-              {SELL_CHANNELS.filter((c) => c.searchUrl(book.isbn)).map((c) => (
-                <a key={c.id} href={c.searchUrl(book.isbn)} target="_blank" rel="noreferrer" className="font-semibold text-indigo-700 hover:underline">
-                  {c.label}
-                </a>
-              ))}
-            </div>
-          )}
-          {book.isbn && (
             <LivePrices
+              auto
               className="mt-2"
               kind="book"
               isbn={book.isbn}

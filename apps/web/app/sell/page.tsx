@@ -1,7 +1,8 @@
 "use client";
 
-import { bookPriceLinks, buildReport, DISPOSITION_COLORS, formatMoney, ITEM_CATEGORIES, optionLabel, SALE_STATUSES, SALES_TO_BUDGET, salesForBudget, salesProceeds, sum, type Book, type Item } from "@moving/shared";
+import { buildReport, DISPOSITION_COLORS, formatMoney, ITEM_CATEGORIES, optionLabel, SALE_STATUSES, SALES_TO_BUDGET, salesForBudget, salesProceeds, sum, type Book, type Item } from "@moving/shared";
 import { useMemo, useState } from "react";
+import { LivePrices } from "@/components/LivePrices";
 import { MediaThumb } from "@/components/Media";
 import { PageHeader, Segmented, Stat } from "@/components/ui";
 import { printHtml } from "@/lib/media";
@@ -9,6 +10,25 @@ import { useDb, useStore } from "@/lib/store-context";
 
 type Tab = "sell" | "donate" | "give" | "trash";
 type Entry = { kind: "items"; row: Item } | { kind: "books"; row: Book };
+
+function BookLivePrices({ book, onPrice }: { book: Book; onPrice: (v: number) => void }) {
+  const [open, setOpen] = useState(false);
+  if (!open)
+    return (
+      <button type="button" className="mt-1 min-h-8 text-[12px] font-semibold text-emerald-700" onClick={() => setOpen(true)}>
+        💲 Live prices
+      </button>
+    );
+  return (
+    <LivePrices
+      auto
+      className="mt-2"
+      kind="book"
+      isbn={book.isbn}
+      actions={(r) => (r.summary.suggested != null ? [{ label: `Price it at ${formatMoney(r.summary.suggested)}`, onClick: () => onPrice(r.summary.suggested!) }] : [])}
+    />
+  );
+}
 
 const MARKETPLACES = [
   { label: "Facebook Marketplace", url: "https://www.facebook.com/marketplace/create/item" },
@@ -136,15 +156,7 @@ export default function SellPage() {
                   {sub}
                   {e.row.est_value ? ` · est. ${formatMoney(e.row.est_value)}` : ""}
                 </div>
-                {e.kind === "books" && tab === "sell" && (
-                  <div className="mt-1 flex flex-wrap gap-2 text-[11px]">
-                    {bookPriceLinks(e.row.isbn).map((l) => (
-                      <a key={l.url} href={l.url} target="_blank" rel="noreferrer" className="text-indigo-700 underline">
-                        {l.label}
-                      </a>
-                    ))}
-                  </div>
-                )}
+                {e.kind === "books" && tab === "sell" && e.row.isbn && <BookLivePrices book={e.row} onPrice={(v) => patch(e, { sale_price: v })} />}
               </div>
               {tab === "sell" ? (
                 <div className="flex flex-wrap items-center gap-2">

@@ -12,7 +12,7 @@ export interface BookInfo {
   format?: string;
   weight_oz?: number | null;
   list_price?: number | null;
-  source: 'openlibrary' | 'google' | 'isbndb' | 'none';
+  source: 'openlibrary' | 'google' | 'isbndb' | 'web' | 'none';
   /** Live merchant offers (ISBNdb Pro plans only). */
   offers?: BookOffer[];
 }
@@ -154,7 +154,7 @@ export function parseOpenLibrary(isbn: string, json: unknown): BookInfo | null {
     publisher: b.publishers?.[0]?.name ?? '',
     published: b.publish_date ?? '',
     pages: b.number_of_pages ?? null,
-    cover_url: b.cover?.medium ?? b.cover?.large ?? `https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg`,
+    cover_url: b.cover?.medium ?? b.cover?.large ?? '',
     subjects,
     genre: guessGenre(subjects, b.title),
     source: 'openlibrary',

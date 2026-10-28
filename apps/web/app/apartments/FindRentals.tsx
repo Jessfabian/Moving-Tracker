@@ -13,6 +13,7 @@ import {
   primaryPlace,
   rentalBestPlan,
   rentalToApartment,
+  RENT_RANGES,
   type ApartmentSearch,
   type MediaRef,
   type RentalResult,
@@ -58,10 +59,11 @@ export function FindRentals({ api }: { api: CrudApi<"apartments"> }) {
     const want = s.homeType === "apartment" ? ["apartment", "condo"] : s.homeType === "townhome" ? ["townhouse"] : s.homeType === "house" ? ["house"] : null;
     const list = filterRentals(found.results, s).filter((r) => !hidden.includes(r.id) && (!want || want.includes(r.homeType)) && (!cityOnly || !s.city.trim() || r.city.toLowerCase() === s.city.trim().toLowerCase()));
     const price = (r: RentalResult) => rentalBestPlan(r, s)?.priceMin ?? r.priceMin ?? 9e9;
+    const priceHigh = (r: RentalResult) => rentalBestPlan(r, s)?.priceMin ?? r.priceMin ?? -1;
     const miles = (r: RentalResult) => distanceToPlace({ latitude: r.lat, longitude: r.lng }, place)?.miles ?? 9e9;
     const score = (r: RentalResult) => mustHaveScore(r, s.mustHaves);
     return [...list].sort((a, b) =>
-      sortBy === "price" ? price(a) - price(b) : sortBy === "distance" ? miles(a) - miles(b) : sortBy === "size" ? (b.sqftMax ?? 0) - (a.sqftMax ?? 0) : score(b) - score(a) || price(a) - price(b),
+      sortBy === "price" ? price(a) - price(b) : sortBy === "price-desc" ? priceHigh(b) - priceHigh(a) : sortBy === "distance" ? miles(a) - miles(b) : sortBy === "size" ? (b.sqftMax ?? 0) - (a.sqftMax ?? 0) : score(b) - score(a) || price(a) - price(b),
     );
   })();
 
@@ -105,7 +107,8 @@ export function FindRentals({ api }: { api: CrudApi<"apartments"> }) {
   };
 
   const links = apartmentSearchLinks(s);
-  const summary = [s.city ? `${s.city}${s.state ? `, ${s.state}` : ""}` : s.zip, s.beds ? `${s.beds}+ bd` : "", s.maxRent ? `≤ ${formatMoney(s.maxRent)}` : "", s.homeType !== "any" ? s.homeType : ""].filter(Boolean).join(" · ");
+  const rentLabel = s.minRent && s.maxRent ? `${formatMoney(s.minRent)}–${formatMoney(s.maxRent)}` : s.maxRent ? `≤ ${formatMoney(s.maxRent)}` : s.minRent ? `${formatMoney(s.minRent)}+` : "";
+  const summary = [s.city ? `${s.city}${s.state ? `, ${s.state}` : ""}` : s.zip, s.beds ? `${s.beds}+ bd` : "", rentLabel, s.homeType !== "any" ? s.homeType : ""].filter(Boolean).join(" · ");
   const stale = found && found.key !== areaKey;
 
   return (
@@ -120,29 +123,23 @@ export function FindRentals({ api }: { api: CrudApi<"apartments"> }) {
 
       {open && (
         <div className="space-y-3 border-t border-gray-100 px-5 py-4">
-          <div className="grid grid-cols-[1fr_5rem] gap-2">
-            <label className="text-xs font-semibold text-gray-500">
-              City
-              <input className="input mt-1" value={s.city} onChange={(e) => set({ city: e.target.value })} placeholder="Germantown" />
-            </label>
+          <label className="block text-xs font-semibold text-gray-500">
+            City
+            <input className="input mt-1" value={s.city} onChange={(e) => set({ city: e.target.value })} placeholder="Germantown" />
+          </label>
+          <div className="grid grid-cols-2 gap-2">
             <label className="text-xs font-semibold text-gray-500">
               State
               <input className="input mt-1 uppercase" maxLength={2} value={s.state} onChange={(e) => set({ state: e.target.value.toUpperCase() })} placeholder="TN" />
             </label>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
             <label className="text-xs font-semibold text-gray-500">
               or ZIP
               <input className="input mt-1" inputMode="numeric" maxLength={5} value={s.zip} onChange={(e) => set({ zip: e.target.value.replace(/\D/g, "") })} placeholder="38138" />
             </label>
-            <label className="text-xs font-semibold text-gray-500">
-              Max rent / mo
-              <input className="input mt-1" inputMode="numeric" value={s.maxRent ?? ""} onChange={(e) => set({ maxRent: num(e.target.value.replace(/\D/g, "")) })} placeholder="2000" />
-            </label>
           </div>
           <div className="grid grid-cols-2 gap-2">
             <label className="text-xs font-semibold text-gray-500">
-              Bedrooms
+              Beds
               <select className="input mt-1" value={s.beds ?? ""} onChange={(e) => set({ beds: num(e.target.value) })}>
                 <option value="">Any</option>
                 {[1, 2, 3, 4].map((n) => (
@@ -153,7 +150,7 @@ export function FindRentals({ api }: { api: CrudApi<"apartments"> }) {
               </select>
             </label>
             <label className="text-xs font-semibold text-gray-500">
-              Bathrooms
+              Baths
               <select className="input mt-1" value={s.baths ?? ""} onChange={(e) => set({ baths: num(e.target.value) })}>
                 <option value="">Any</option>
                 {[1, 2, 3].map((n) => (
@@ -163,6 +160,46 @@ export function FindRentals({ api }: { api: CrudApi<"apartments"> }) {
                 ))}
               </select>
             </label>
+          </div>
+          <div>
+            <div className="text-xs font-semibold text-gray-500">Rent per month</div>
+            <div className="mt-1 grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+              <div className="relative">
+                <span className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-sm text-gray-400">$</span>
+                <input className="input pl-6" inputMode="numeric" aria-label="Minimum rent" value={s.minRent ?? ""} onChange={(e) => set({ minRent: num(e.target.value.replace(/\D/g, "")) })} placeholder="Min" />
+              </div>
+              <span className="text-gray-400">–</span>
+              <div className="relative">
+                <span className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-sm text-gray-400">$</span>
+                <input className="input pl-6" inputMode="numeric" aria-label="Maximum rent" value={s.maxRent ?? ""} onChange={(e) => set({ maxRent: num(e.target.value.replace(/\D/g, "")) })} placeholder="Max" />
+              </div>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {RENT_RANGES.map((r) => {
+                const on = (s.minRent ?? null) === r.min && (s.maxRent ?? null) === r.max;
+                return (
+                  <button
+                    key={r.label}
+                    type="button"
+                    aria-pressed={on}
+                    className={`min-h-9 rounded-full px-3 text-xs font-semibold ${on ? "bg-ink text-white" : "bg-gray-100 text-gray-600"}`}
+                    onClick={() => set({ minRent: r.min, maxRent: r.max })}
+                  >
+                    {r.label}
+                  </button>
+                );
+              })}
+              {budget ? (
+                <button
+                  type="button"
+                  aria-pressed={!s.minRent && s.maxRent === budget}
+                  className={`min-h-9 rounded-full px-3 text-xs font-semibold ${!s.minRent && s.maxRent === budget ? "bg-ink text-white" : "bg-emerald-50 text-emerald-700"}`}
+                  onClick={() => set({ minRent: null, maxRent: budget })}
+                >
+                  My budget (≤ {formatMoney(budget)})
+                </button>
+              ) : null}
+            </div>
           </div>
           <div className="grid grid-cols-4 gap-0.5 rounded-full bg-ink/[0.06] p-0.5" role="radiogroup" aria-label="Home type">
             {(
@@ -229,17 +266,39 @@ export function FindRentals({ api }: { api: CrudApi<"apartments"> }) {
               </label>
             )}
             <label className="flex items-center gap-1.5 text-sm text-gray-500">
+              Price
+              <select
+                className="ios-popup max-w-[9.5rem] font-semibold text-ink"
+                aria-label="Price range"
+                value={String(RENT_RANGES.findIndex((r) => (s.minRent ?? null) === r.min && (s.maxRent ?? null) === r.max))}
+                onChange={(e) => {
+                  const r = RENT_RANGES[Number(e.target.value)];
+                  if (r) set({ minRent: r.min, maxRent: r.max });
+                }}
+              >
+                <option value="-1" disabled>
+                  {rentLabel || "Custom"}
+                </option>
+                {RENT_RANGES.map((r, i) => (
+                  <option key={r.label} value={i}>
+                    {r.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex items-center gap-1.5 text-sm text-gray-500">
               Sort
               <select className="ios-popup font-semibold text-ink" value={sortBy} onChange={(e) => setSortBy(e.target.value)} aria-label="Sort results">
                 <option value="match">Best match</option>
-                <option value="price">Lowest rent</option>
+                <option value="price">Price: low to high</option>
+                <option value="price-desc">Price: high to low</option>
                 {place && <option value="distance">Closest</option>}
                 <option value="size">Biggest</option>
               </select>
             </label>
           </div>
           {results.length === 0 ? (
-            <p className="py-6 text-center text-sm text-gray-500">Nothing matches — try a higher max rent or fewer bedrooms.</p>
+            <p className="py-6 text-center text-sm text-gray-500">Nothing matches — try a wider price range or fewer bedrooms.</p>
           ) : (
             <ul className="grid gap-3 sm:grid-cols-2">
               {results.slice(0, shown).map((r) => (

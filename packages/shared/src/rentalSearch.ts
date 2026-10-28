@@ -146,8 +146,8 @@ export function rentalBestPlan(r: RentalResult, s: Pick<ApartmentSearch, 'beds' 
   return fit[0] ?? null;
 }
 
-/** Keeps listings that could match: enough bedrooms/baths in some floor plan and a price under the max. */
-export function filterRentals(list: RentalResult[], s: Pick<ApartmentSearch, 'beds' | 'baths' | 'maxRent' | 'mustHaves'>): RentalResult[] {
+/** Keeps listings that could match: enough bedrooms/baths in some floor plan and a price inside the min–max range. */
+export function filterRentals(list: RentalResult[], s: Pick<ApartmentSearch, 'beds' | 'baths' | 'maxRent' | 'minRent' | 'mustHaves'>): RentalResult[] {
   const seen = new Set<string>();
   return list.filter((r) => {
     if (seen.has(r.id)) return false;
@@ -157,6 +157,12 @@ export function filterRentals(list: RentalResult[], s: Pick<ApartmentSearch, 'be
     const plan = rentalBestPlan(r, s);
     const price = plan?.priceMin ?? r.priceMin;
     if (s.maxRent && price != null && price > s.maxRent) return false;
+    if (s.minRent) {
+      const fits = r.floorPlans.filter((p) => (!s.beds || (p.beds ?? 0) >= s.beds) && (!s.baths || (p.baths ?? 0) >= s.baths));
+      const tops = fits.map((p) => p.priceMax ?? p.priceMin).filter((n): n is number => n != null);
+      const top = tops.length ? Math.max(...tops) : (r.priceMax ?? r.priceMin);
+      if (top != null && top < s.minRent) return false;
+    }
     return true;
   });
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { formatMoney, type LivePriceResult } from "@moving/shared";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cachedLivePrices, fetchLivePrices, livePriceKey } from "@/lib/livePrices";
 
 export interface LivePriceAction {
@@ -16,6 +16,8 @@ interface Props {
   /** Buttons to offer once prices are in (e.g. "Use $12 as resale value"). */
   actions?: (r: LivePriceResult) => LivePriceAction[];
   className?: string;
+  /** Fetch prices as soon as the panel shows (instead of waiting for a tap). */
+  auto?: boolean;
 }
 
 const ago = (iso: string) => {
@@ -29,13 +31,14 @@ export function LivePrices(props: Props) {
   return <LivePricesInner key={key} {...props} />;
 }
 
-function LivePricesInner({ isbn, query, kind, actions, className = "" }: Props) {
+function LivePricesInner({ isbn, query, kind, actions, className = "", auto }: Props) {
   const key = livePriceKey({ isbn, query });
   const [result, setResult] = useState<LivePriceResult | null>(() => (typeof window === "undefined" ? null : cachedLivePrices(key)));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
   const canRun = !!isbn || (query ?? "").trim().length >= 3;
+  const started = useRef(false);
 
   const run = async (force = false) => {
     setBusy(true);
@@ -49,8 +52,23 @@ function LivePricesInner({ isbn, query, kind, actions, className = "" }: Props) 
     }
   };
 
+  useEffect(() => {
+    if (!auto || !canRun || result || started.current) return;
+    started.current = true;
+    const t = setTimeout(() => void run(), 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   if (!canRun) return null;
   if (!result) {
+    if (auto && !err)
+      return (
+        <div className={`rounded-2xl border border-emerald-100 bg-emerald-50/60 p-3 text-sm ${className}`}>
+          <div className="font-bold">💲 Live prices</div>
+          <p className="mt-1 animate-pulse text-[13px] text-slate-600">{kind === "book" ? "Checking AbeBooks, ThriftBooks and ValoreBooks…" : "Checking stores…"}</p>
+        </div>
+      );
     return (
       <div className={className}>
         <button type="button" className="btn-secondary min-h-11 w-full text-sm" disabled={busy} onClick={() => void run()}>

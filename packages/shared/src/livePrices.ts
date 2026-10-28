@@ -4,7 +4,7 @@
  * Store prices are *asking* prices, so resale suggestions discount them.
  */
 
-import { isbn10to13 } from './books';
+import { guessGenre, isbn10to13, parseBookFormat, type BookInfo } from './books';
 
 export interface LiveOffer {
   source: string;
@@ -270,4 +270,74 @@ export function summarizeOffers(offers: LiveOffer[], kind: 'book' | 'item'): Liv
     suggested,
     basis,
   };
+}
+
+/* ---------- Book details + covers from the free store pages ---------- */
+
+export function isbn13to10(isbn13: string): string | null {
+  if (!/^978\d{10}$/.test(isbn13)) return null;
+  const body = isbn13.slice(3, 12);
+  let sum = 0;
+  for (let i = 0; i < 9; i++) sum += (10 - i) * Number(body[i]);
+  const c = (11 - (sum % 11)) % 11;
+  return body + (c === 10 ? 'X' : String(c));
+}
+
+/** Cover image URLs to try for an ISBN, best first. Each must be checked — some return a blank placeholder. */
+export function bookCoverCandidates(isbn13: string): { source: string; url: string }[] {
+  const ten = isbn13to10(isbn13);
+  return [
+    ...(ten ? [{ source: 'Amazon', url: `https://images-na.ssl-images-amazon.com/images/P/${ten}.01.L.jpg` }] : []),
+    { source: 'AbeBooks', url: `https://pictures.abebooks.com/isbn/${isbn13}-us._SL300_.jpg` },
+    { source: 'Open Library', url: `https://covers.openlibrary.org/b/isbn/${isbn13}-L.jpg?default=false` },
+  ];
+}
+
+const asNames = (v: unknown): string[] =>
+  (Array.isArray(v) ? v : v ? [v] : [])
+    .map((a) => decode(String(typeof a === 'object' && a ? ((a as { name?: string }).name ?? '') : a)).trim())
+    .filter(Boolean);
+
+/** Book details (title, author, publisher, format, cover) from the AbeBooks listing data for this ISBN. */
+export function parseAbeBooksBook(html: string, isbn13: string): BookInfo | null {
+  for (const m of html.matchAll(/<script type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/g)) {
+    let json: unknown;
+    try {
+      json = JSON.parse(m[1]!);
+    } catch {
+      continue;
+    }
+    const list = (json as { itemListElement?: unknown[] })?.itemListElement;
+    if (!Array.isArray(list)) continue;
+    const items = list.map((el) => (el as { item?: Record<string, unknown> })?.item).filter((x): x is Record<string, unknown> => !!x?.name);
+    const item = items.find((x) => String(x.isbn ?? '') === isbn13) ?? items[0];
+    if (!item) continue;
+    const full = decode(String(item.name)).replace(/\s+/g, ' ').trim();
+    const [title, ...rest] = full.split(/\s*:\s*/);
+    const subjects: string[] = [];
+    const year = /(1[5-9]\d\d|20\d\d)/.exec(String(item.datePublished ?? ''))?.[1] ?? '';
+    return {
+      isbn: isbn13,
+      title: title || full,
+      subtitle: rest.join(': '),
+      authors: asNames(item.author).map((a) => a.replace(/^([^,]+),\s*([^,]+)$/, '$2 $1')),
+      publisher: asNames(item.publisher)[0] ?? '',
+      published: year,
+      pages: Number(item.numberOfPages) || null,
+      cover_url: typeof item.image === 'string' ? item.image : '',
+      subjects,
+      genre: guessGenre(subjects, full),
+      format: parseBookFormat(String(item.bookFormat ?? '').split('/').pop()?.replace(/([a-z])([A-Z])/g, '$1 $2')),
+      source: 'web',
+    };
+  }
+  return null;
+}
+
+/** ThriftBooks cover — only when the page is for this exact edition. */
+export function thriftBooksCover(html: string, isbn13: string): string | null {
+  const shown = /(?:[#?&]|%23|%26)isbn(?:=|%3D)(\d{9}[\dX]|\d{13})/i.exec(html)?.[1];
+  const shown13 = shown ? (shown.length === 10 ? isbn10to13(shown) : shown) : null;
+  if (shown13 !== isbn13) return null;
+  return /https:\/\/i\.thriftbooks\.com\/api\/imagehandler\/[ml]\/[A-F0-9]+\.jpe?g/i.exec(html)?.[0] ?? null;
 }
