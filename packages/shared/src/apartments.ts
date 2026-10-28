@@ -1,4 +1,5 @@
 import type { Apartment } from './types';
+import { rentComSearchUrls } from './rentalSearch';
 
 const n = (v: number | null | undefined) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 
@@ -48,3 +49,80 @@ export const APARTMENT_CHECKLIST: string[] = [
   'Look up school ratings and walkability for the neighborhood',
   'Take photos/video of existing damage at move-in',
 ];
+
+export interface ApartmentSearch {
+  city: string;
+  state: string;
+  zip: string;
+  beds: number | null;
+  baths: number | null;
+  maxRent: number | null;
+  homeType: 'any' | 'apartment' | 'house' | 'townhome';
+  mustHaves: string[];
+}
+
+export const APARTMENT_MUST_HAVES = ['In-unit laundry', 'Garage', 'Pool', 'Fitness center', 'Dishwasher', 'Fenced yard', 'Washer/dryer hookups', 'Gated'] as const;
+
+export interface SearchLink {
+  site: string;
+  url: string;
+  note: string;
+}
+
+const slug = (s: string) => s.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+/** Pre-filled search pages on the big rental sites for what the family is looking for. */
+export function apartmentSearchLinks(s: ApartmentSearch): SearchLink[] {
+  const city = s.city.trim();
+  const st = s.state.trim().toUpperCase();
+  const zip = s.zip.trim();
+  if (!city && !zip) return [];
+  const cityState = city ? `${slug(city)}-${st.toLowerCase()}` : zip;
+  const beds = s.beds && s.beds > 0 ? Math.min(Math.round(s.beds), 4) : null;
+  const max = s.maxRent && s.maxRent > 0 ? Math.round(s.maxRent) : null;
+  const where = city ? `${city}, ${st}` : zip;
+  const homeType = s.homeType === 'house' ? 'houses' : s.homeType === 'townhome' ? 'townhomes' : s.homeType === 'apartment' ? 'apartments' : '';
+
+  const acParts = [beds ? `${beds}-bedrooms` : '', max ? `under-${max}` : ''].filter(Boolean).join('-');
+  const apartmentsCom = `https://www.apartments.com/${homeType && homeType !== 'apartments' ? `${homeType}/` : ''}${zip && !city ? zip : cityState}/${acParts ? `${acParts}/` : ''}`;
+
+  const zillowQ = encodeURIComponent(
+    JSON.stringify({
+      usersSearchTerm: where,
+      filterState: {
+        fr: { value: true },
+        fsba: { value: false },
+        fsbo: { value: false },
+        nc: { value: false },
+        cmsn: { value: false },
+        auc: { value: false },
+        fore: { value: false },
+        ...(beds ? { beds: { min: beds } } : {}),
+        ...(s.baths ? { baths: { min: s.baths } } : {}),
+        ...(max ? { mp: { max } } : {}),
+      },
+    }),
+  );
+  const zillow = `https://www.zillow.com/${city ? cityState : zip}/rentals/?searchQueryState=${zillowQ}`;
+
+  const realtorCity = city ? `${city.replace(/\s+/g, '-')}_${st}` : zip;
+  const realtor = `https://www.realtor.com/apartments/${realtorCity}${beds ? `/beds-${beds}` : ''}${max ? `/price-na-${max}` : ''}`;
+
+  const hp = new URLSearchParams();
+  if (beds) hp.set('beds', `${beds}-8+`);
+  if (max) hp.set('maxPrice', String(max));
+  const hotpads = `https://hotpads.com/${city ? cityState : zip}/${homeType || 'apartments'}-for-rent${hp.toString() ? `?${hp}` : ''}`;
+
+  const trulia = `https://www.trulia.com/for_rent/${city ? `${city.replace(/\s+/g, '_')},${st}` : zip}/${beds ? `${beds}p_beds/` : ''}${max ? `0-${max}_price/` : ''}`;
+
+  const rentCom = rentComSearchUrls({ city, state: st, zip, homeType: s.homeType === 'any' ? 'apartment' : s.homeType }, 1)[0];
+
+  return [
+    { site: 'Apartments.com', url: apartmentsCom, note: 'Biggest apartment inventory' },
+    { site: 'Zillow', url: zillow, note: 'Houses, townhomes and apartments' },
+    { site: 'Realtor.com', url: realtor, note: 'Rentals from local agents' },
+    { site: 'HotPads', url: hotpads, note: 'Map-first rental search' },
+    { site: 'Trulia', url: trulia, note: 'Neighborhood and crime maps' },
+    ...(rentCom ? [{ site: 'Rent.com', url: rentCom, note: 'Same results as the in-app search' }] : []),
+  ];
+}

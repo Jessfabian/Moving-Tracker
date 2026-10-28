@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  apartmentSearchLinks,
+  filterRentals,
+  parseRentComSearch,
+  rentalToApartment,
+  rentComSearchUrls,
   apartmentCosts,
   boxDisplayCode,
   buildLabelSheet,
@@ -94,5 +99,52 @@ describe('QR label maker', () => {
     expect(html).toContain('FRAGILE');
     expect(html).toContain('OPEN FIRST');
     expect(html).toContain('size:4in 6in');
+  });
+});
+
+describe('apartment search links', () => {
+  it('builds pre-filled searches for each site', () => {
+    const links = apartmentSearchLinks({ city: 'Germantown', state: 'TN', zip: '', beds: 2, baths: null, maxRent: 2000, homeType: 'any', mustHaves: [] });
+    const ac = links.find((l) => l.site === 'Apartments.com')!;
+    expect(ac.url).toBe('https://www.apartments.com/germantown-tn/2-bedrooms-under-2000/');
+    expect(links.find((l) => l.site === 'Realtor.com')!.url).toBe('https://www.realtor.com/apartments/Germantown_TN/beds-2/price-na-2000');
+    expect(links.length).toBeGreaterThan(5);
+    expect(apartmentSearchLinks({ city: '', state: '', zip: '', beds: null, baths: null, maxRent: null, homeType: 'any', mustHaves: [] })).toEqual([]);
+  });
+});
+describe('in-app rental search (Rent.com)', () => {
+  const listing = {
+    id: 'lc1', name: 'The Residences at Thornwood', urlPathname: '/apartment/thornwood-lc1', address: '7794 Kings College Ave',
+    location: { lat: 35.1, lng: -89.8, city: 'Germantown', stateAbbr: 'TN', zip: '38138' }, bedText: '1–2 Beds', bathText: '1.5–2 Baths',
+    squareFeetText: '918–1170 Sqft', price: 2184, priceRange: { min: 2184, max: 2830 }, bedRange: { min: 1, max: 2 }, propertyType: 'APARTMENTS',
+    phoneDesktopText: '(901) 589-1196', propertyManagementCompany: { name: 'Fogelman' }, uniqueHighlights: ['Pool', 'Pet Friendly', 'Garage', 'Washer'],
+    optimizedPhotos: [{ id: 'abc' }, { id: 'def' }], unitsAvailableText: '2 Units Available',
+    floorPlans: [
+      { bedCount: 1, bathCount: 1, priceRange: { min: 2184, max: 2184 }, sqFtRange: { min: 918, max: 918 } },
+      { bedCount: 2, bathCount: 2, priceRange: { min: 2600, max: 2830 }, sqFtRange: { min: 1170, max: 1170 } },
+    ],
+  };
+  const html = `<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({ props: { pageProps: { pageData: { location: { listingSearch: { listings: [listing] } } } } } })}</script>`;
+
+  it('builds Rent.com search pages for the area', () => {
+    expect(rentComSearchUrls({ city: 'Germantown', state: 'TN', zip: '', homeType: 'apartment' }, 2)).toEqual([
+      'https://www.rent.com/tennessee/germantown-apartments',
+      'https://www.rent.com/tennessee/germantown-apartments/page-2',
+    ]);
+    expect(rentComSearchUrls({ city: '', state: '', zip: '38138', homeType: 'house' }, 1)).toEqual(['https://www.rent.com/zip-38138-houses']);
+  });
+
+  it('parses listings, filters by beds and budget, and saves a full apartment', () => {
+    const [r] = parseRentComSearch(html);
+    expect(r!.name).toBe('The Residences at Thornwood');
+    expect(r!.images[0]).toBe('https://i.rent.com/t_3x2_fixed_webp_lg/abc');
+    expect(r!.amenities).not.toContain('Pet Friendly');
+    const s = { beds: 2, baths: null, maxRent: 2700, mustHaves: [] };
+    expect(filterRentals([r!], s)).toHaveLength(1);
+    expect(filterRentals([r!], { ...s, maxRent: 2500 })).toHaveLength(0);
+    const a = rentalToApartment(r!, s);
+    expect(a).toMatchObject({ rent: 2600, bedrooms: 2, bathrooms: 2, sqft: 1170, zip: '38138', pets_allowed: true, parking: 'garage', laundry: 'in_unit', latitude: 35.1 });
+    expect(a.geocoded_address).toBe('7794 Kings College Ave, Germantown, TN 38138');
+    expect(a.listing_url).toBe('https://www.rent.com/apartment/thornwood-lc1');
   });
 });

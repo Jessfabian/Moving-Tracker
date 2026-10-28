@@ -12,6 +12,7 @@ export * from './store';
 export * from './cloud';
 export * from './insights';
 export * from './apartments';
+export * from './rentalSearch';
 export * from './labels';
 export * from './geo';
 export * from './cashflow';

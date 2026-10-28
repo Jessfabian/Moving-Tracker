@@ -38,6 +38,7 @@ import { CrudPage, StatusPill, type CrudApi } from "@/components/CrudPage";
 import { Gallery } from "@/components/Gallery";
 import { useMediaUrls } from "@/components/Media";
 import { MapView, type MapLine, type MapPin } from "@/components/MapView";
+import { FindRentals } from "./FindRentals";
 import { SchoolCard, SchoolsPanel, TopSchoolCell, ZoneChip, useKidLevels, useSchoolZone } from "./Schools";
 import { geocodeOne } from "@/lib/geo";
 import { useLocalState } from "@/lib/hooks";
@@ -701,12 +702,13 @@ function Top({ api }: { api: CrudApi<"apartments"> }) {
   return (
     <>
       <Overview api={api} />
+      <FindRentals api={api} />
       <MapSection api={api} />
       <Comparison />
-      <Checklist />
     </>
   );
 }
+
 
 const SORTS: { value: string; label: string }[] = [
   { value: "cost", label: "Lowest cost" },
@@ -770,7 +772,12 @@ export default function ApartmentsPage() {
       }
       renderCard={(a, open) => <ApartmentCard a={a} open={open} />}
       renderDetail={(a) => <Detail a={a} />}
-      after={(api) => <NotChosen api={api} sort={sort} />}
+      after={(api) => (
+        <>
+          <NotChosen api={api} sort={sort} />
+          <Checklist />
+        </>
+      )}
       emptyText="Add each apartment or rental you find — or paste a listing link and we'll pull the photos, address and rent."
     />
   );
