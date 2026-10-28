@@ -15,7 +15,17 @@ export interface ProductInfo {
   source: string;
 }
 
-export const resaleEstimate = (retail: number | null) => (retail && retail > 0 ? Math.round(retail * 0.4) : null);
+/**
+ * PC components (RAM, graphics cards, CPUs, SSDs…) resell close to today's price — and right now
+ * memory/GPU prices are climbing, so used parts often sell for more than people paid.
+ */
+export const COMPUTER_PART =
+  /\b(ddr[2-5]|so-?dimm|dimm|\d+ ?gb (ddr\d ?)?(ram|memory)|ram (kit|sticks?|modules?)|(desktop|laptop|computer|pc|gaming) (ram|memory)|memory (kit|module)|graphics card|video card|gpu|rtx ?\d{3,4}|gtx ?\d{3,4}|radeon|geforce|rx ?\d{4}|arc a\d{3}|cpu|(intel|amd|desktop|computer) processor|ryzen|threadripper|core (i[3579]|ultra)|xeon|ssd|nvme|m\.2|motherboard|mobo|power supply|psu|hard drive|hdd|cpu cooler|aio cooler)\b/i;
+export const isComputerPart = (name: string) => COMPUTER_PART.test(name);
+/** Share of the current new price a used item realistically sells for. */
+export const resaleShare = (name = '') => (isComputerPart(name) ? 0.75 : 0.4);
+
+export const resaleEstimate = (retail: number | null, name = '') => (retail && retail > 0 ? Math.round(retail * resaleShare(name)) : null);
 
 interface UpcItem {
   title?: string;
@@ -57,7 +67,7 @@ export function parseUpcItem(code: string, it: UpcItem): ProductInfo | null {
     category,
     image: (it.images ?? []).find((u) => u.startsWith('https://')) ?? it.images?.[0] ?? '',
     price,
-    resale: resaleEstimate(price),
+    resale: resaleEstimate(price, it.title ?? ''),
     source: 'UPCitemdb',
   };
 }
@@ -85,6 +95,7 @@ export function mapCategory(raw: string): string {
 }
 
 const ITEM_WORDS: [RegExp, string][] = [
+  [COMPUTER_PART, 'electronics'],
   [/\b(sofa|couch|chair|table|desk|dresser|bed ?frame|bed|mattress|bookcase|bookshelf|shel(f|ves)|cabinet|nightstand|ottoman|recliner|futon|crib|wardrobe|armoire|bench|stool|sideboard|credenza|hutch|headboard)s?\b/i, 'furniture'],
   [/\b(tv|television|monitor|laptop|computer|pc|printer|speaker|soundbar|stereo|console|playstation|xbox|nintendo|router|tablet|ipad|camera|headphones)s?\b/i, 'electronics'],
   [/\b(fridge|refrigerator|freezer|washer|dryer|dishwasher|microwave|oven|stove|range|vacuum|air ?conditioner|dehumidifier|humidifier|fan|heater|blender|toaster|mixer|air fryer|coffee (maker|machine)|kettle)s?\b/i, 'appliances'],
@@ -273,7 +284,7 @@ export function parseProductHtml(html: string, pageUrl: string): ProductInfo {
   // Store SEO blurbs ("Online Shopping for…", "Shop X at Best Buy…") aren't a product description.
   const description = /^(online shopping for|shop\b|read reviews and buy|buy\b|find low everyday prices|discover\b|browse\b)/i.test(rawDescription) ? '' : rawDescription;
   const category = name ? guessItemCategory(name) : 'other';
-  return { barcode: gtin ?? '', name, brand, model, description, category, image, price, resale: resaleEstimate(price), source: hostLabel(pageUrl) };
+  return { barcode: gtin ?? '', name, brand, model, description, category, image, price, resale: resaleEstimate(price, name), source: hostLabel(pageUrl) };
 }
 
 function hostLabel(url: string): string {
@@ -354,7 +365,7 @@ export function parseTargetProduct(json: unknown): ProductInfo | null {
     category: guessItemCategory(name),
     image: String(dig(item, 'enrichment', 'image_info', 'primary_image', 'url') ?? ''),
     price: retail,
-    resale: resaleEstimate(retail),
+    resale: resaleEstimate(retail, name),
     source: 'target.com',
   };
 }

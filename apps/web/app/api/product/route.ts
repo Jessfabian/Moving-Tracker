@@ -35,7 +35,7 @@ async function finish(info: ProductInfo, note?: string) {
     const p = await storePrice(full).catch(() => null);
     if (p != null) {
       full.price = p;
-      full.resale = resaleEstimate(p);
+      full.resale = resaleEstimate(p, full.name);
       priceNote = "price is the typical price at stores right now";
     }
   }

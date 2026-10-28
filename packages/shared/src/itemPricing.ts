@@ -1,4 +1,5 @@
 import { CATEGORY_WEIGHT_LBS } from './movers';
+import { isComputerPart } from './products';
 import type { Item } from './types';
 
 /**
@@ -112,13 +113,14 @@ const CATEGORY_PRICE: Record<string, [number, number, number]> = {
 };
 
 /** How much of the new price a used item keeps, by category. */
-const RETAIL_KEEP: Record<string, number> = { furniture: 0.35, electronics: 0.45, appliances: 0.4, sports: 0.4, tools: 0.45, toys: 0.3, jewelry: 0.4 };
+const RETAIL_KEEP: Record<string, number> = { pc_parts: 0.75, furniture: 0.35, electronics: 0.45, appliances: 0.4, sports: 0.4, tools: 0.45, toys: 0.3, jewelry: 0.4 };
 
 /**
  * Depreciation by age: share of the new price kept in the first year, what's kept each extra year, and the floor.
- * Electronics drop fast; tools, jewelry and collectibles hold value.
+ * Electronics drop fast; PC parts, tools, jewelry and collectibles hold value.
  */
 const AGE_CURVE: Record<string, { first: number; perYear: number; floor: number }> = {
+  pc_parts: { first: 0.8, perYear: 0.88, floor: 0.35 },
   electronics: { first: 0.65, perYear: 0.75, floor: 0.08 },
   appliances: { first: 0.6, perYear: 0.85, floor: 0.12 },
   furniture: { first: 0.5, perYear: 0.88, floor: 0.15 },
@@ -199,29 +201,42 @@ export function itemPriceIdea(
   opts: { costPerLb?: number; today?: Date } = {},
 ): PriceIdea {
   const qty = Math.max(1, item.quantity || 1);
-  const row = priceRowFor(item.name);
-  const category = row?.category ?? item.category ?? 'other';
+  const pcPart = isComputerPart(item.name);
+  const row = pcPart ? undefined : priceRowFor(item.name);
+  const category = row?.category ?? (pcPart ? 'electronics' : item.category) ?? 'other';
+  const curve = pcPart ? 'pc_parts' : category;
+  const kindText = pcPart ? 'computer parts' : category;
   const cond = CONDITION_FACTOR[item.condition] ?? 1;
   const age = itemAgeYears(item.purchase_date, opts.today);
   const newPrice = item.retail_price && item.retail_price > 0 ? item.retail_price : item.purchase_price && item.purchase_price > 0 ? item.purchase_price : null;
-  const priceWord = item.retail_price && item.retail_price > 0 ? 'new price' : 'price you paid';
+  const priceWord = item.retail_price && item.retail_price > 0 ? 'current new price' : 'price you paid';
   const condText = `Condition “${item.condition.replace('_', ' ')}” × ${cond}`;
   const steps: string[] = [];
+  // When today's price is well above what was paid, the market is hot — used sells off today's price, not the old one.
+  const paid = item.purchase_price && item.purchase_price > 0 ? item.purchase_price : null;
+  const rising = !!(paid && item.retail_price && item.retail_price > paid * 1.15);
+  const risingStep = rising
+    ? `Prices are up ${Math.round((item.retail_price! / paid! - 1) * 100)}% since you paid $${Math.round(paid!)}${pcPart ? ' — computer parts are in short supply, so used ones sell close to today’s price' : ''}.`
+    : '';
   let low: number, likely: number, high: number, basis: string;
   if (newPrice && age != null) {
-    const keep = ageKeep(category, age);
+    const keep = ageKeep(curve, age);
     likely = newPrice * keep * cond;
-    low = likely * 0.6;
-    high = Math.min(newPrice * 0.85, likely * 1.6);
-    basis = `${Math.round(keep * 100)}% of the $${Math.round(newPrice)} ${priceWord} for ${ageText(age)} ${category}, adjusted for condition`;
-    steps.push(`Started from the $${Math.round(newPrice)} ${priceWord}.`, `It’s ${ageText(age)}: used ${category} keeps about ${Math.round(keep * 100)}% at that age.`, `${condText}.`);
+    low = likely * (pcPart ? 0.8 : 0.6);
+    high = Math.min(newPrice * (pcPart ? 0.95 : 0.85), likely * (pcPart ? 1.25 : 1.6));
+    basis = `${Math.round(keep * 100)}% of the $${Math.round(newPrice)} ${priceWord} for ${ageText(age)} ${kindText}, adjusted for condition`;
+    steps.push(`Started from the $${Math.round(newPrice)} ${priceWord}.`);
+    if (risingStep) steps.push(risingStep);
+    steps.push(`It’s ${ageText(age)}: used ${kindText} keep about ${Math.round(keep * 100)}% at that age.`, `${condText}.`);
   } else if (newPrice) {
-    const keep = RETAIL_KEEP[category] ?? 0.3;
+    const keep = RETAIL_KEEP[curve] ?? 0.3;
     likely = newPrice * keep * cond;
-    low = likely * 0.6;
-    high = Math.min(newPrice * 0.8, likely * 1.6);
+    low = likely * (pcPart ? 0.8 : 0.6);
+    high = Math.min(newPrice * (pcPart ? 0.95 : 0.8), likely * (pcPart ? 1.25 : 1.6));
     basis = `${Math.round(keep * 100)}% of the $${Math.round(newPrice)} ${priceWord}, adjusted for condition`;
-    steps.push(`Started from the $${Math.round(newPrice)} ${priceWord}.`, `Used ${category} typically resells for ~${Math.round(keep * 100)}% of new (add a purchase date to make this sharper).`, `${condText}.`);
+    steps.push(`Started from the $${Math.round(newPrice)} ${priceWord}.`);
+    if (risingStep) steps.push(risingStep);
+    steps.push(`Used ${kindText} typically resell for ~${Math.round(keep * 100)}% of new (add a purchase date to make this sharper).`, `${condText}.`);
   } else {
     let l: number, m: number, h: number;
     if (row) {
@@ -244,7 +259,7 @@ export function itemPriceIdea(
   }
   if (qty > 1) steps.push(`Prices are per item — you have ${qty}.`);
   steps.push('Range: low ≈ quick sale, high ≈ patient seller. Always check eBay “sold” listings for the real number.');
-  const lbs = row?.lbs ?? CATEGORY_WEIGHT_LBS[category] ?? CATEGORY_WEIGHT_LBS.other!;
+  const lbs = pcPart ? 2 : (row?.lbs ?? CATEGORY_WEIGHT_LBS[category] ?? CATEGORY_WEIGHT_LBS.other!);
   const moveCost = Math.round(lbs * qty * (opts.costPerLb ?? DEFAULT_MOVE_COST_PER_LB));
   const value = likely * qty;
   let verdict: PriceIdea['verdict'];
