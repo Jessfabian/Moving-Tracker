@@ -21,6 +21,7 @@ import {
 } from "@moving/shared";
 import { useMemo, useState, useSyncExternalStore } from "react";
 import { download } from "@/lib/media";
+import { askConfirm } from "@/components/ConfirmSheet";
 import { Card } from "@/components/Swipe";
 import { buildInventoryPdf, type InventoryPdfRoom, type InventoryPdfRow } from "@/lib/inventoryPdf";
 import { useApp, useDb, useStore } from "@/lib/store-context";
@@ -177,6 +178,7 @@ export function QuoteEmail({ size, prefs, setPrefs, onPrint }: { size: MoveSize;
   const contact = contactFor(db);
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  const [pdfError, setPdfError] = useState<string | null>(null);
   const [newQ, setNewQ] = useState("");
   const [newNote, setNewNote] = useState("");
 
@@ -311,10 +313,11 @@ export function QuoteEmail({ size, prefs, setPrefs, onPrint }: { size: MoveSize;
 
   const run = async (label: string, fn: () => Promise<void>) => {
     setBusy(label);
+    setPdfError(null);
     try {
       await fn();
     } catch (e) {
-      if ((e as Error)?.name !== "AbortError") alert(`Couldn't make the PDF: ${(e as Error)?.message ?? e}`);
+      if ((e as Error)?.name !== "AbortError") setPdfError(`Couldn't make the PDF: ${(e as Error)?.message ?? e}. Try again, or turn off Photos to make the file smaller.`);
     } finally {
       setBusy(null);
     }
@@ -327,7 +330,7 @@ export function QuoteEmail({ size, prefs, setPrefs, onPrint }: { size: MoveSize;
       title="Quote request email"
       bodyClassName="mt-0"
       right={
-        <button className="text-xs text-indigo-700 underline" onClick={() => confirm("Reset the email to the default wording and choices?") && setPrefs(null)}>
+        <button className="text-xs text-indigo-700 underline" onClick={() => void askConfirm({ title: "Reset this email?", message: "Your wording and choices go back to the defaults.", confirm: "Reset email", destructive: true }).then((ok) => ok && setPrefs(null))}>
           Reset
         </button>
       }
@@ -392,7 +395,12 @@ export function QuoteEmail({ size, prefs, setPrefs, onPrint }: { size: MoveSize;
           Values
         </label>
       </div>
-      <p className="mt-2 text-xs text-gray-500">
+      {pdfError && (
+        <p className="mt-2 rounded-lg bg-red-50 p-2 text-sm text-red-700" role="alert">
+          {pdfError}
+        </p>
+      )}
+      <p className="mt-2 text-xs text-gray-500" aria-live="polite">
         {busy ?? (
           <>
             Email links can&apos;t attach files: save the <b>📄 Item list PDF</b> and attach it, or use <b>📤 Share email + PDF</b> on your phone to open Mail with it attached. “Email all

@@ -2,6 +2,7 @@
 
 import { buildReport, EXPORTABLE, makeLookup, REPORTS, SCHEMAS, tableToCsv, today, type Snapshot } from "@moving/shared";
 import { useRef, useState } from "react";
+import { askConfirm } from "@/components/ConfirmSheet";
 import { Card } from "@/components/Swipe";
 import { PageHeader } from "@/components/ui";
 import { download, printHtml } from "@/lib/media";
@@ -18,7 +19,7 @@ export default function ReportsPage() {
     try {
       const data = JSON.parse(await f.text()) as Partial<Snapshot> & { app?: string };
       if (!data.moves && !data.tasks) throw new Error("This doesn't look like a Moving Tracker backup.");
-      if (!confirm("Merge this backup into your current data? Matching records are overwritten.")) return;
+      if (!(await askConfirm({ title: "Import this backup?", message: "It is merged into your current data. Records that match are replaced with the backup copy.", confirm: "Import backup" }))) return;
       store.importSnapshot(data);
       setMsg("✅ Backup imported.");
     } catch (e) {

@@ -1,21 +1,62 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { Children, Fragment, isValidElement, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
+import { Children, Fragment, isValidElement, useEffect, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { NAV_GROUPS } from "@/lib/nav";
+import { Glyph } from "./Symbols";
 
-function useEscape(open: boolean, onClose: () => void) {
+const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]):not([type="hidden"]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+let openSheets = 0;
+
+/**
+ * HIG (Modality, Sheets, Accessibility): a sheet takes focus when it opens, keeps Tab inside itself,
+ * closes with Escape (topmost sheet only), and hands focus back to whatever opened it.
+ */
+export function useSheetFocus(open: boolean, onClose: () => void, ref: RefObject<HTMLElement | null>) {
+  const close = useRef(onClose);
+  useEffect(() => {
+    close.current = onClose;
+  }, [onClose]);
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const panel = ref.current;
+    const opener = document.activeElement as HTMLElement | null;
+    if (panel && !panel.contains(document.activeElement)) panel.querySelector<HTMLElement>("[data-sheet-title]")?.focus({ preventScroll: true });
+    const isTop = () => {
+      const all = document.querySelectorAll('[aria-modal="true"]');
+      return !!panel && all[all.length - 1]?.contains(panel);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (!isTop()) return;
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        close.current();
+        return;
+      }
+      if (e.key !== "Tab" || !panel) return;
+      const f = [...panel.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((el) => el.offsetParent !== null);
+      if (!f.length) return;
+      const first = f[0];
+      const last = f[f.length - 1];
+      if (e.shiftKey && (document.activeElement === first || !panel.contains(document.activeElement))) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
     window.addEventListener("keydown", onKey);
+    openSheets++;
     document.body.style.overflow = "hidden";
     return () => {
       window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = "";
+      openSheets = Math.max(0, openSheets - 1);
+      if (!openSheets) document.body.style.overflow = "";
+      if (opener?.isConnected) opener.focus({ preventScroll: true });
     };
-  }, [open, onClose]);
+  }, [open, ref]);
 }
 
 const noop = () => () => {};
@@ -47,16 +88,18 @@ function Grabber() {
 }
 
 export function Drawer({ open, onClose, title, children, wide }: { open: boolean; onClose: () => void; title: ReactNode; children: ReactNode; wide?: boolean }) {
-  useEscape(open, onClose);
+  const ref = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  useSheetFocus(open, onClose, ref);
   if (!open) return null;
   return (
     <Portal>
-    <div className="duo-sheet fixed inset-0 z-50 flex items-end justify-end p-0 sm:items-stretch sm:p-3 short:items-stretch short:p-0" role="dialog" aria-modal="true">
+    <div ref={ref} className="duo-sheet fixed inset-0 z-50 flex items-end justify-end p-0 sm:items-stretch sm:p-3 short:items-stretch short:p-0" role="dialog" aria-modal="true" aria-labelledby={titleId}>
       <div className="duo-backdrop animate-fade absolute inset-0 bg-ink/40 backdrop-blur-[2px]" onClick={onClose} />
       <div className={`duo-panel animate-sheet relative flex h-[calc(100dvh-max(2.5rem,env(safe-area-inset-top)))] w-full flex-col overflow-hidden rounded-t-[1.75rem] bg-paper shadow-2xl sm:h-full sm:rounded-[1.75rem] sm:animate-none short:h-full short:animate-none short:rounded-none ${wide ? "max-w-3xl" : "max-w-xl"}`}>
         <Grabber />
         <div className="flex items-center justify-between gap-3 px-5 pt-3 pb-3 sm:px-6 sm:pt-5">
-          <h2 className="min-w-0 truncate font-display text-[22px] font-bold tracking-tight sm:text-2xl">{title}</h2>
+          <h2 id={titleId} data-sheet-title tabIndex={-1} className="min-w-0 truncate font-display text-[22px] font-bold tracking-tight outline-none sm:text-2xl">{title}</h2>
           <CloseButton onClose={onClose} />
         </div>
         <div className="@container min-h-0 flex-1 overscroll-contain overflow-y-auto px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:px-6">{children}</div>
@@ -67,16 +110,18 @@ export function Drawer({ open, onClose, title, children, wide }: { open: boolean
 }
 
 export function Modal({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: ReactNode; children: ReactNode }) {
-  useEscape(open, onClose);
+  const ref = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  useSheetFocus(open, onClose, ref);
   if (!open) return null;
   return (
     <Portal>
-    <div className="duo-modal fixed inset-0 z-50 flex items-end justify-center sm:items-center" role="dialog" aria-modal="true">
+    <div ref={ref} className="duo-modal fixed inset-0 z-50 flex items-end justify-center sm:items-center" role="dialog" aria-modal="true" aria-labelledby={titleId}>
       <div className="animate-fade absolute inset-0 bg-ink/50 backdrop-blur-[2px]" onClick={onClose} />
       <div className="@container animate-sheet relative max-h-[92dvh] w-full max-w-lg short:max-h-[96dvh] overscroll-contain overflow-y-auto rounded-t-[1.75rem] bg-paper px-5 pt-0 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-2xl sm:rounded-[1.75rem] sm:p-6 sm:animate-none">
         <Grabber />
         <div className="mb-4 flex items-center justify-between gap-3 pt-3 sm:pt-0">
-          <h2 className="min-w-0 truncate font-display text-[22px] font-bold tracking-tight sm:text-2xl">{title}</h2>
+          <h2 id={titleId} data-sheet-title tabIndex={-1} className="min-w-0 truncate font-display text-[22px] font-bold tracking-tight outline-none sm:text-2xl">{title}</h2>
           <CloseButton onClose={onClose} />
         </div>
         {children}
@@ -95,7 +140,7 @@ const LEGACY_COLORS: Record<string, string> = {
 
 export function Progress({ value, color = "bg-ink" }: { value: number; color?: string }) {
   return (
-    <div className="h-1.5 w-full overflow-hidden rounded-full bg-ink/10">
+    <div className="h-1.5 w-full overflow-hidden rounded-full bg-ink/10" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(Math.max(0, Math.min(100, value)))}>
       <div className={`h-full rounded-full transition-all ${LEGACY_COLORS[color] ?? color}`} style={{ width: `${Math.max(0, Math.min(100, value))}%` }} />
     </div>
   );
@@ -212,19 +257,70 @@ export function PageHeader({ title, icon, subtitle, actions, eyebrow }: { title:
   );
 }
 
-export function Segmented<T extends string>({ value, options, onChange }: { value: T; options: { value: T; label: string }[]; onChange: (v: T) => void }) {
+export function Segmented<T extends string>({ value, options, onChange, label }: { value: T; options: { value: T; label: string }[]; onChange: (v: T) => void; label?: string }) {
+  const move = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    const dir = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+    if (!dir) return;
+    e.preventDefault();
+    const i = options.findIndex((o) => o.value === value);
+    const next = options[(i + dir + options.length) % options.length];
+    onChange(next.value);
+    requestAnimationFrame(() => (e.currentTarget.querySelector('[aria-checked="true"]') as HTMLElement | null)?.focus());
+  };
   return (
-    <div className="no-scrollbar inline-flex max-w-full gap-0.5 overflow-x-auto rounded-full bg-ink/[0.06] p-1">
+    <div className="no-scrollbar inline-flex max-w-full gap-0.5 overflow-x-auto rounded-full bg-ink/[0.06] p-1" role="radiogroup" aria-label={label} onKeyDown={move}>
       {options.map((o) => (
         <button
           type="button"
           key={o.value}
+          role="radio"
+          aria-checked={value === o.value}
+          tabIndex={value === o.value ? 0 : -1}
           onClick={() => onChange(o.value)}
           className={`min-h-9 shrink-0 rounded-full px-3.5 py-1.5 text-sm font-semibold whitespace-nowrap transition ${value === o.value ? "bg-ink text-white shadow-sm" : "text-gray-600 hover:text-ink"}`}
         >
           {o.label}
         </button>
       ))}
+    </div>
+  );
+}
+
+/**
+ * HIG Search fields: magnifying glass, a placeholder that says what can be searched,
+ * a clear (×) button once there is text, and a Search key on the keyboard.
+ */
+export function SearchField({ value, onChange, placeholder, label, className = "" }: { value: string; onChange: (v: string) => void; placeholder: string; label?: string; className?: string }) {
+  return (
+    <div className={`relative ${className}`}>
+      <Glyph name="search" className="pointer-events-none absolute top-1/2 left-3.5 h-[18px] w-[18px] -translate-y-1/2 text-gray-400" />
+      <input
+        type="search"
+        role="searchbox"
+        enterKeyHint="search"
+        autoCorrect="off"
+        autoCapitalize="none"
+        spellCheck={false}
+        aria-label={label ?? placeholder.replace(/…$/, "")}
+        className="input search-input w-full pr-11! pl-10!"
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          if (e.key === "Escape" && value) {
+            e.stopPropagation();
+            onChange("");
+          }
+        }}
+      />
+      {value && (
+        <button type="button" className="absolute top-1/2 right-1 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full text-gray-400 active:opacity-60" aria-label="Clear search" onClick={() => onChange("")}>
+          <span className="grid h-[18px] w-[18px] place-items-center rounded-full bg-gray-400 text-white">
+            <Glyph name="xmark" className="h-3 w-3" strokeWidth={2.6} />
+          </span>
+        </button>
+      )}
     </div>
   );
 }

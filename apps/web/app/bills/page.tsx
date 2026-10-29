@@ -214,7 +214,7 @@ export default function BillsPage() {
                   const soon = !!d && (d.overdue || d.daysAway <= 7);
                   return (
                     <li key={b.id}>
-                      <SwipeRow actions={rowActions("bills", b.id, b.name)}>
+                      <SwipeRow actions={rowActions("bills", b.id, b.name)} label={b.name}>
                       <div className={`flex w-full items-center gap-2 rounded-2xl border bg-white p-3 transition hover:shadow-md ${d?.overdue ? "border-red-300" : "border-gray-200/80"}`}>
                       <button onClick={() => setEditing({ table: "bills", row: b })} className="flex min-w-0 flex-1 items-center gap-3 text-left">
                         <span className="flex h-10 w-10 flex-none items-center justify-center rounded-xl font-display font-bold text-white" style={{ background: CAT_COLORS[b.category] ?? "#78716c" }}>
@@ -265,7 +265,7 @@ export default function BillsPage() {
                 const m = incomeMonthly(i);
                 return (
                   <li key={i.id}>
-                    <SwipeRow actions={rowActions("incomes", i.id, i.source)}>
+                    <SwipeRow actions={rowActions("incomes", i.id, i.source)} label={i.source}>
                     <button onClick={() => setEditing({ table: "incomes", row: i })} className="flex w-full items-center gap-3 rounded-2xl border border-gray-200/80 bg-white p-3 text-left transition hover:shadow-md">
                       <span className="flex h-10 w-10 flex-none items-center justify-center rounded-xl bg-sage font-display font-bold">$</span>
                       <span className="min-w-0 flex-1">

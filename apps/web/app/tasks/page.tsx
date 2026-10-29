@@ -2,8 +2,9 @@
 
 import { applyPlan, bucketFor, CATEGORY_ICONS, daysBetween, optionLabel, TASK_CATEGORIES, TIMELINE_BUCKETS, type Task } from "@moving/shared";
 import { useMemo, useState } from "react";
+import { askConfirm } from "@/components/ConfirmSheet";
 import { TaskDrawer, TaskList } from "@/components/TaskList";
-import { PageHeader, Progress, Segmented } from "@/components/ui";
+import { PageHeader, Progress, Segmented, SearchField } from "@/components/ui";
 import { useDb, useStore } from "@/lib/store-context";
 
 type View = "timeline" | "category" | "person";
@@ -72,8 +73,15 @@ export default function TasksPage() {
           <>
             <button
               className="btn-secondary"
-              onClick={() => {
-                const r = applyPlan(store, { removeObsolete: confirm("Also remove untouched tasks that no longer apply (e.g. for removed family members)?") });
+              onClick={async () => {
+                const choice = await askConfirm({
+                  title: "Refresh your plan",
+                  message: "New tasks are added and dates are updated. Do you also want to remove untouched tasks that no longer apply, like ones for people you removed?",
+                  confirm: "Refresh and remove old tasks",
+                  alt: "Refresh only",
+                });
+                if (!choice) return;
+                const r = applyPlan(store, { removeObsolete: choice === true });
                 setMsg(`Plan refreshed: ${r.created} added, ${r.rescheduled} rescheduled, ${r.removed} removed.`);
               }}
             >
@@ -122,7 +130,7 @@ export default function TasksPage() {
             </option>
           ))}
         </select>
-        <input className="input max-w-xs flex-1" placeholder="Search tasks…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <SearchField className="max-w-xs flex-1" placeholder="Search tasks…" value={q} onChange={setQ} />
       </div>
       {!move?.move_date && view === "timeline" && <p className="mb-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">Set your move date in Move details to place tasks on the timeline.</p>}
       <div className="space-y-6">

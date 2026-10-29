@@ -3,10 +3,11 @@
 import { daysUntil, formatDate, tripEnabled } from "@moving/shared";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect } from "react";
+import { useRef } from "react";
 import { NAV_GROUPS } from "@/lib/nav";
 import { useDb } from "@/lib/store-context";
 import { NavPositionPicker } from "./NavPositionPicker";
+import { useSheetFocus } from "./ui";
 
 const GROUP_TINT: Record<string, string> = {
   Overview: "bg-sand",
@@ -28,19 +29,11 @@ export function MoreSheet({ onClose }: { onClose: () => void }) {
   const d = daysUntil(move?.move_date);
   const showTrip = tripEnabled(move, db.travel ?? []);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
-    };
-  }, [onClose]);
+  const ref = useRef<HTMLDivElement>(null);
+  useSheetFocus(true, onClose, ref);
 
   return (
-    <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="More">
+    <div ref={ref} className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-labelledby="more-sheet-title">
       <div className="animate-fade absolute inset-0 bg-black/25" onClick={onClose} />
       <div
         className="animate-sheet absolute inset-x-0 bottom-0 flex max-h-[calc(100dvh-max(2.5rem,env(safe-area-inset-top)))] flex-col overflow-hidden rounded-t-[1.75rem] bg-grouped shadow-2xl
@@ -50,7 +43,7 @@ export function MoreSheet({ onClose }: { onClose: () => void }) {
           <span className="h-1.5 w-10 rounded-full bg-black/15" />
         </div>
         <div className="flex items-center justify-between px-5 pt-2 pb-2 short:pt-4">
-          <h2 className="text-[28px] leading-tight font-bold tracking-[-0.02em] text-ink">More</h2>
+          <h2 id="more-sheet-title" data-sheet-title tabIndex={-1} className="text-[28px] leading-tight font-bold tracking-[-0.02em] text-ink outline-none">More</h2>
           <button onClick={onClose} className="h-11 rounded-full px-3 text-[17px] font-semibold text-accent active:opacity-60">
             Done
           </button>
@@ -78,7 +71,7 @@ export function MoreSheet({ onClose }: { onClose: () => void }) {
             const items = g.items.filter((i) => i.href !== "/travel" || showTrip || path.startsWith("/travel"));
             return (
               <section key={g.title}>
-                <h3 className="mb-1.5 px-4 text-[13px] font-normal text-gray-500 uppercase">{g.title}</h3>
+                <h3 className="mb-1.5 px-4 text-[13px] font-normal text-gray-500">{g.title}</h3>
                 <ul className="overflow-hidden rounded-2xl bg-white">
                   {items.map((i, idx) => {
                     const active = i.href === "/" ? path === "/" : path.startsWith(i.href);
@@ -106,7 +99,7 @@ export function MoreSheet({ onClose }: { onClose: () => void }) {
           })}
 
           <section>
-            <h3 className="mb-1.5 px-4 text-[13px] font-normal text-gray-500 uppercase">Navigation bar</h3>
+            <h3 className="mb-1.5 px-4 text-[13px] font-normal text-gray-500">Navigation bar</h3>
             <div className="rounded-2xl bg-white p-3">
               <NavPositionPicker />
             </div>

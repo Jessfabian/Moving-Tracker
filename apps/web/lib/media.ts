@@ -53,8 +53,24 @@ export function droppedImages(dt: DataTransfer | null): { files: File[]; urls: s
   return { files: [], urls: [...urls].slice(0, 20) };
 }
 
-export function download(filename: string, content: string | Blob, type = "text/plain") {
+/**
+ * Saves a file. On phones this opens the iOS/Android Share sheet (Save to Files, AirDrop, Mail, Messages —
+ * HIG Activity views / File management); elsewhere, or if sharing isn't allowed, it downloads.
+ */
+export async function download(filename: string, content: string | Blob, type = "text/plain") {
   const blob = typeof content === "string" ? new Blob([content], { type }) : content;
+  const touch = typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
+  if (touch && typeof navigator.canShare === "function") {
+    const file = new File([blob], filename, { type: blob.type || type });
+    if (navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: filename });
+        return;
+      } catch (e) {
+        if ((e as Error)?.name === "AbortError") return;
+      }
+    }
+  }
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;

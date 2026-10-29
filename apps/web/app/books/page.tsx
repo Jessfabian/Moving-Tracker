@@ -9,7 +9,7 @@ import { useMediaUrls } from "@/components/Media";
 import { useLocalState } from "@/lib/hooks";
 import { BulkEdit } from "./BulkEdit";
 import { Scanner } from "@/components/Scanner";
-import { Drawer, Empty, PageHeader, Segmented } from "@/components/ui";
+import { Drawer, Empty, PageHeader, Segmented, SearchField } from "@/components/ui";
 import { useDb, useStore } from "@/lib/store-context";
 import { SwipeRow, showUndo, useDeleteWithUndo, useHiddenRows, type SwipeAction } from "@/components/Swipe";
 import { GroupToggle, SelectActions, SelectBar, SelectCircle, useSelection } from "@/components/Selection";
@@ -259,7 +259,7 @@ export default function BooksPage() {
 
       <div className="@container mb-4 space-y-2">
         <div className="grid grid-cols-1 items-center gap-2 @lg:grid-cols-[minmax(0,1fr)_auto_auto_auto_auto]">
-          <input className="input w-full min-w-0" type="search" placeholder="Search title, author, ISBN…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <SearchField className="min-w-0" placeholder="Search title, author, ISBN…" label="Search books" value={q} onChange={setQ} />
           <div className="grid min-w-0 grid-cols-2 gap-2 @md:grid-cols-4 @lg:contents">
             <select className="ios-popup min-h-9 w-full min-w-0 truncate bg-ink/[0.06] @lg:w-auto" aria-label="Plan" value={disp} onChange={(e) => setDisp(e.target.value)}>
               <option value="">Plan</option>
@@ -375,7 +375,7 @@ export default function BooksPage() {
                 <ul className="ios-list divide-y divide-gray-200/70">
                   {g.rows.map((b) => (
                     <li key={b.id}>
-                      <SwipeRow radius="rounded-none" actions={selecting ? [] : rowActions(b)}>
+                      <SwipeRow radius="rounded-none" actions={selecting ? [] : rowActions(b)} label={b.title}>
                       <button type="button" onClick={() => openBook(b)} className={`flex min-h-14 w-full min-w-0 items-center gap-3 bg-white px-3 py-2 text-left ${sel.has(b.id) ? "bg-accent/[0.07]!" : ""}`}>
                         {selecting && <SelectCircle on={sel.has(b.id)} />}
                         <Cover book={b} className="h-12 w-8" tiny />

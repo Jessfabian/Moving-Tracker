@@ -70,6 +70,7 @@ export function FieldInput({
             className={`input ${field.type === "money" ? "pl-6" : ""}`}
             type="number"
             inputMode="decimal"
+            enterKeyHint="next"
             step="any"
             value={value === null || value === undefined ? "" : String(value)}
             onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))}
@@ -212,6 +213,13 @@ export function FieldInput({
         <input
           {...common}
           type={field.type === "email" ? "email" : field.type === "phone" ? "tel" : field.type === "url" ? "url" : "text"}
+          // HIG Virtual keyboards / Entering data: the right keyboard, no auto-caps for addresses, and autofill where it helps.
+          {...(field.type === "email" || field.type === "url"
+            ? { autoCapitalize: "none", autoCorrect: "off", spellCheck: false, autoComplete: field.type === "email" ? "email" : "url" }
+            : field.type === "phone"
+              ? { autoComplete: "tel" }
+              : {})}
+          enterKeyHint="next"
           value={(value as string) ?? ""}
           onChange={(e) => onChange(e.target.value)}
           placeholder={field.placeholder}
@@ -712,10 +720,13 @@ export function EntityForm<T extends TableName>({
   };
 
   const save = () => {
-    const title = draft[schema.titleField];
-    if (schema.fields.some((f) => f.required && f.key === schema.titleField) && !String(title ?? "").trim()) {
-      setMissing(schema.titleField);
-      document.getElementById(`f-${schema.titleField}`)?.focus();
+    const isEmpty = (v: unknown) => v == null || (typeof v === "string" && !v.trim()) || (Array.isArray(v) && !v.length);
+    const need = sections.flatMap((s) => s.fields).find((f) => f.required && f.type !== "boolean" && f.type !== "select" && isEmpty(draft[f.key]));
+    if (need) {
+      setMissing(need.key);
+      const el = document.getElementById(`f-${need.key}`);
+      el?.scrollIntoView({ block: "center", behavior: "smooth" });
+      el?.focus({ preventScroll: true });
       return;
     }
     const clean = { ...draft };
@@ -851,12 +862,13 @@ export function EntityForm<T extends TableName>({
                 {f.type !== "boolean" && (
                   <label className="label" htmlFor={`f-${f.key}`}>
                     {f.label}
-                    {f.required && " *"}
+                    {f.required && <span aria-hidden> *</span>}
+                    {f.required && <span className="sr-only"> (required)</span>}
                   </label>
                 )}
                 <FieldInput field={f} value={draft[f.key]} onChange={(v) => set(f.key, v)} onPatch={(p) => setDraft((d) => ({ ...d, ...p }))} />
                 {missing === f.key && (
-                  <p className="mt-1 text-[13px] font-medium text-red-600" role="alert">
+                  <p id={`f-${f.key}-err`} className="mt-1 text-[13px] font-medium text-red-600" role="alert">
                     Add {f.label.toLowerCase()} to save.
                   </p>
                 )}

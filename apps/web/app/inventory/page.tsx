@@ -3,12 +3,13 @@
 import { DISPOSITION_COLORS, DISPOSITIONS, formatMoney, guessItemCategory, ITEM_CATEGORIES, itemPriceIdea, itemPriceQuery, optionLabel, productToItemPatch, sum, type Item, type Room } from "@moving/shared";
 import { useMemo, useRef, useState } from "react";
 import { lookupProduct } from "@/lib/lookup";
+import { askConfirm } from "@/components/ConfirmSheet";
 import { EntityForm } from "@/components/EntityForm";
 import { LivePrices } from "@/components/LivePrices";
 import { MediaThumb } from "@/components/Media";
 import { RoomScan } from "@/components/RoomScan";
 import { Scanner } from "@/components/Scanner";
-import { Drawer, Empty, PageHeader } from "@/components/ui";
+import { Drawer, Empty, PageHeader, SearchField } from "@/components/ui";
 import { compressImage } from "@/lib/media";
 import { useDb, useStore } from "@/lib/store-context";
 import { SwipeRow, showUndo, useDeleteWithUndo, useHiddenRows, type SwipeAction } from "@/components/Swipe";
@@ -72,8 +73,11 @@ export default function InventoryPage() {
     const existing = db.items.find((i) => i.barcode === code);
     if (existing) {
       setBusy(null);
-      if (confirm(`“${existing.name}” is already in your inventory. Add another one (quantity +1)?`)) store.update("items", existing.id, { quantity: (existing.quantity || 1) + 1 });
-      else setEditing({ row: existing });
+      const ok = await askConfirm({ title: `“${existing.name}” is already in your inventory`, message: `You have ${existing.quantity || 1}. Add one more, or open the item to edit it.`, confirm: "Add one more", alt: "Open item" });
+      if (ok === true) {
+        store.update("items", existing.id, { quantity: (existing.quantity || 1) + 1 });
+        showUndo(`${existing.name}: quantity ${(existing.quantity || 1) + 1}`, () => store.update("items", existing.id, { quantity: existing.quantity || 1 }));
+      } else if (ok === "alt") setEditing({ row: existing });
       return;
     }
     const p = await lookupProduct(code).catch(() => null);
@@ -201,7 +205,7 @@ export default function InventoryPage() {
           <option value="none">❔ No room</option>
           <option value="__new">+ New room…</option>
         </select>
-        <input type="search" className="input order-first col-span-2 sm:order-none sm:max-w-xs sm:flex-1" placeholder="Search items…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <SearchField className="order-first col-span-2 sm:order-none sm:max-w-xs sm:flex-1" placeholder="Search items…" value={q} onChange={setQ} />
         <select className="input sm:w-auto" value={disp} onChange={(e) => setDisp(e.target.value)}>
           <option value="">Any plan</option>
           <option value="car">🚗 Coming in our car</option>
@@ -231,7 +235,7 @@ export default function InventoryPage() {
             const r = !roomId ? rooms.find((x) => x.id === i.room_id) : null;
             const color = DISPOSITION_COLORS[i.disposition];
             return (
-              <SwipeRow key={i.id} radius="rounded-none" actions={sel.active ? [] : rowActions(i)}>
+              <SwipeRow key={i.id} radius="rounded-none" actions={sel.active ? [] : rowActions(i)} label={i.name}>
               <div className={`flex min-h-[4.5rem] items-center pr-3 transition-colors ${sel.has(i.id) ? "bg-accent/[0.07]" : "bg-white"} ${sel.active ? "" : "pl-3"}`}>
                 {sel.active && (
                   <button type="button" role="checkbox" aria-checked={sel.has(i.id)} aria-label={`Select ${i.name}`} className="flex w-11 shrink-0 items-center justify-center self-stretch" onClick={() => sel.toggle(i.id)}>

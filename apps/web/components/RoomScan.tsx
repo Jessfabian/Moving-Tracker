@@ -342,7 +342,7 @@ export function RoomScan({ open, onClose, initialRoomId, onSaved }: { open: bool
                               </option>
                             ))}
                           </select>
-                          {r.source === "photo" && <span className="chip self-center bg-lime/30 text-ink">seen {Math.round(r.confidence * 100)}%</span>}
+                          {r.source === "photo" && (r.confidence >= 0.6 ? <span className="chip self-center bg-lime/30 text-ink">Likely</span> : <span className="chip self-center bg-amber-100 text-amber-800">Check this</span>)}
                           {r.source === "ai" && <span className="chip self-center bg-violet-100 text-violet-800">AI</span>}
                         </div>
                         <div className="text-xs text-gray-600">

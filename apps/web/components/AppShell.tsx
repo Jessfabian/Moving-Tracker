@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { MOBILE_TABS, NAV_GROUPS } from "@/lib/nav";
 import { useApp, useDb, useSyncStatus } from "@/lib/store-context";
 import { CloudGate } from "./CloudGate";
+import { ConfirmHost } from "./ConfirmSheet";
 import { useSyncMoveDistance } from "./MoveDistance";
 import { MoreSheet } from "./MoreSheet";
 import { NamePrompt, PullToRefresh, SyncToaster } from "./SyncFeedback";
@@ -133,6 +134,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <DistanceSync />
       <SyncToaster />
       <UndoToast />
+      <ConfirmHost />
       <PullToRefresh />
       <div className="flex min-h-screen">
         <aside className="sticky top-0 hidden h-screen w-[16.5rem] flex-none flex-col gap-6 ink-panel overflow-y-auto bg-ink px-4 py-5 text-white lg:flex [&>*]:flex-none">

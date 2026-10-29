@@ -210,7 +210,7 @@ export default function CalendarPage() {
               </button>
             </div>
             <div className="mt-3 -mx-2">
-              {dayEvents.length ? dayEvents.map((e) => <EventRow key={e.id} e={e} onOpen={open} />) : <p className="px-2 py-6 text-center text-sm text-gray-400">Nothing scheduled. Double-click a day to add an appointment.</p>}
+              {dayEvents.length ? dayEvents.map((e) => <EventRow key={e.id} e={e} onOpen={open} />) : <p className="px-2 py-6 text-center text-sm text-gray-400">Nothing scheduled. Tap + Add to plan something for this day.</p>}
             </div>
           </aside>
         </div>

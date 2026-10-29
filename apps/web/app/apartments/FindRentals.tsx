@@ -169,7 +169,7 @@ export function FindRentals({ api }: { api: CrudApi<"apartments"> }) {
               📍 {center.address}
             </p>
           )}
-          {!places.length && <p className="-mt-1 text-xs text-gray-500">Tip: add his job under “Your places” to search by commute.</p>}
+          {!places.length && <p className="-mt-1 text-xs text-gray-500">Tip: add a work address under “Your places” to search by commute time.</p>}
           {(!center || !centerArea) && (
             <>
               <label className="block text-xs font-semibold text-gray-500">

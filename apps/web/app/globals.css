@@ -615,3 +615,6 @@ main > * {
   .scan-flash { animation-name: none; }
 }
 
+
+/* Our own clear button replaces the browser's, so there is only one (HIG Search fields). */
+.search-input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }

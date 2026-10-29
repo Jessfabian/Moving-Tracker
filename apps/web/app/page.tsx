@@ -43,7 +43,7 @@ function Ring({ pct, size = 112 }: { pct: number; size?: number }) {
   const r = size / 2 - 8;
   const c = 2 * Math.PI * r;
   return (
-    <svg width={size} height={size} className="-rotate-90">
+    <svg width={size} height={size} className="-rotate-90" aria-hidden>
       <circle cx={size / 2} cy={size / 2} r={r} stroke="rgba(255,255,255,.12)" strokeWidth="10" fill="none" />
       <circle cx={size / 2} cy={size / 2} r={r} stroke="var(--lime)" strokeWidth="10" fill="none" strokeLinecap="round" strokeDasharray={c} strokeDashoffset={c * (1 - pct / 100)} />
     </svg>
@@ -171,7 +171,7 @@ export default function Dashboard() {
                 {move.distance_miles ? ` · ${move.distance_miles.toLocaleString()} miles` : ""}
               </div>
             </div>
-            <Link href="/tasks" className="relative grid shrink-0 place-items-center self-start sm:self-end">
+            <Link href="/tasks" className="relative grid shrink-0 place-items-center self-start sm:self-end" aria-label={`Checklist: ${ins.tasks.pct}% of tasks done`}>
               <Ring pct={ins.tasks.pct} />
               <div className="absolute text-center">
                 <div className="font-display text-2xl font-bold">{ins.tasks.pct}%</div>

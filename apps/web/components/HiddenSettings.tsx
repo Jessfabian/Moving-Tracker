@@ -25,7 +25,7 @@ export function HiddenSettings() {
     <>
       <section id="hidden" className="card scroll-mt-4 space-y-3">
         <h2 className="font-bold">🙈 Hidden cards &amp; items</h2>
-        <p className="text-sm text-gray-600">Swipe left on any card or list item and tap Hide to tuck it away. Tap a card&apos;s title to fold it up instead. Everything you&apos;ve hidden on this device is listed here.</p>
+        <p className="text-sm text-gray-600">Swipe left (or press and hold) on any card or list item and tap Hide to tuck it away. Tap a card&apos;s title to fold it up instead. Everything you&apos;ve hidden on this device is listed here.</p>
         {!cards.cards.length && !rows.rows.length ? (
           <p className="rounded-2xl bg-ink/5 p-3 text-sm text-gray-500">Nothing hidden.</p>
         ) : (

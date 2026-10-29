@@ -3,6 +3,7 @@
 import { listHouseholdMembers, MovingStore, personName, type HouseholdMember } from "@moving/shared";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { askConfirm } from "@/components/ConfirmSheet";
 import { HiddenSettings } from "@/components/HiddenSettings";
 import { NavPositionPicker } from "@/components/NavPositionPicker";
 import { PageHeader } from "@/components/ui";
@@ -33,7 +34,7 @@ export default function SettingsPage() {
     const snap = local.exportSnapshot();
     const n = Object.values(snap).reduce((a, rows) => a + rows.length, 0);
     if (!n) return setMsg("There is no device-only data to copy.");
-    if (!confirm(`Copy ${n} records from this device into the shared cloud move?`)) return;
+    if (!(await askConfirm({ title: `Copy ${n} records to the cloud?`, message: "Everything saved only on this device is added to your shared move.", confirm: "Copy to cloud" }))) return;
     store.importSnapshot(snap);
     await store.sync();
     setMsg(`✅ Copied ${n} records to the cloud.`);
@@ -97,8 +98,14 @@ export default function SettingsPage() {
             <details className="rounded-xl border border-gray-200 p-3" open={!settings.supabaseUrl}>
               <summary className="cursor-pointer text-sm font-semibold">Supabase connection</summary>
               <div className="mt-3 space-y-2">
-                <input className="input" placeholder="https://xxxx.supabase.co" value={url} onChange={(e) => setUrl(e.target.value)} />
-                <input className="input" placeholder="anon public key" value={key} onChange={(e) => setKey(e.target.value)} />
+                <label className="label" htmlFor="sb-url">
+                  Project URL
+                </label>
+                <input id="sb-url" className="input" type="url" inputMode="url" autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="https://xxxx.supabase.co" value={url} onChange={(e) => setUrl(e.target.value)} />
+                <label className="label" htmlFor="sb-key">
+                  Public (anon) key
+                </label>
+                <input id="sb-key" className="input" type="password" autoComplete="off" autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="Paste the anon public key" value={key} onChange={(e) => setKey(e.target.value)} />
                 <button className="btn-secondary" onClick={() => updateSettings({ supabaseUrl: url.trim(), supabaseKey: key.trim() })}>
                   Save connection
                 </button>
@@ -164,6 +171,16 @@ export default function SettingsPage() {
         )}
       </section>
 
+      <section className="card space-y-2">
+        <h2 className="font-bold">🔒 Privacy</h2>
+        <p className="text-sm text-gray-600">
+          {settings.mode === "cloud"
+            ? "Your move is stored in your own Supabase project. Only people who join with your invite code can see or change it, and everyone sees the same lists, budget, documents and family details."
+            : "Everything stays in this browser on this device. Nothing is sent anywhere unless you turn on cloud sync."}{" "}
+          Barcode, ISBN and address lookups send only the code or address you look up. Room scans read photos on this device, unless the cloud photo reader is turned on for your site; then up to 6 photos are sent to it to name the items.
+        </p>
+      </section>
+
       <HiddenSettings />
 
       <section className="card space-y-3 border-red-200">
@@ -174,7 +191,13 @@ export default function SettingsPage() {
         <button
           className="btn-danger"
           onClick={async () => {
-            if (!store || !confirm(settings.mode === "local" ? "Permanently erase ALL data on this device? Download a backup first!" : "Clear the offline copy on this device?")) return;
+            if (!store) return;
+            const ok = await askConfirm(
+              settings.mode === "local"
+                ? { title: "Erase all data on this device?", message: "This can't be undone. Save a backup in Reports first if you might need it.", confirm: "Erase all data", destructive: true }
+                : { title: "Reset the offline copy?", message: "This device downloads a fresh copy from the cloud. Shared data isn't deleted.", confirm: "Reset offline copy", destructive: true },
+            );
+            if (!ok) return;
             await store.clearAll();
             if (settings.mode === "cloud") await store.sync();
             router.push(settings.mode === "local" ? "/setup" : "/");

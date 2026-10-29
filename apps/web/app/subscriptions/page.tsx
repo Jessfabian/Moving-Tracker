@@ -129,7 +129,7 @@ export default function SubscriptionsPage() {
     const next = x.status === "cancelled" ? null : rollForward(x.next_due, x.frequency, t);
     return (
       <li key={x.id}>
-        <SwipeRow actions={actions(x)}>
+        <SwipeRow actions={actions(x)} label={x.name}>
           <button type="button" onClick={() => setViewing(x.id)} className="flex w-full items-center gap-3 rounded-2xl border border-gray-200/80 bg-white p-3 text-left transition hover:shadow-md">
             <Logo s={x} />
             <span className="min-w-0 flex-1">

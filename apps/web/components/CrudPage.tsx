@@ -7,7 +7,7 @@ import { useDb } from "@/lib/store-context";
 import { EntityForm } from "./EntityForm";
 import { MediaThumb } from "./Media";
 import { SwipeRow, showUndo, useDeleteWithUndo, useHiddenRows, type SwipeAction } from "./Swipe";
-import { Drawer, Empty, PageHeader } from "./ui";
+import { Drawer, Empty, PageHeader, SearchField } from "./ui";
 
 type Row = Record<string, unknown>;
 
@@ -174,7 +174,7 @@ export function CrudPage<T extends TableName>(props: CrudPageProps<T>) {
           {renderCard ? (
             <div className={`grid gap-4 ${twoPane ? "" : "sm:grid-cols-2"} ${twoPane && !formOpen ? "xl:grid-cols-2" : ""}`}>
               {g.rows.map((r) => (
-                <SwipeRow key={r.id} radius="rounded-[1.25rem] lg:rounded-[1.75rem]" actions={rowActions(r)}>
+                <SwipeRow key={r.id} radius="rounded-[1.25rem] lg:rounded-[1.75rem]" actions={rowActions(r)} label={titleOf(r)}>
                   {renderCard(r, () => setEditing(r.id))}
                 </SwipeRow>
               ))}
@@ -186,7 +186,7 @@ export function CrudPage<T extends TableName>(props: CrudPageProps<T>) {
               const media = photoKey ? ((row[photoKey] as TableMap["items"]["photos"]) ?? []) : [];
               return (
                 <li key={r.id}>
-                  <SwipeRow actions={rowActions(r)}>
+                  <SwipeRow actions={rowActions(r)} label={titleOf(r)}>
                   <button
                     onClick={() => setEditing(r.id)}
                     className={`group flex w-full items-center gap-4 rounded-2xl border bg-white px-4 py-3.5 text-left transition hover:-translate-y-px hover:shadow-[0_10px_30px_-18px_rgba(13,13,15,0.5)] ${editing === r.id ? "border-ink ring-1 ring-ink" : "border-gray-200/80"}`}
@@ -242,7 +242,7 @@ export function CrudPage<T extends TableName>(props: CrudPageProps<T>) {
       />
       {typeof top === "function" ? top(api) : top}
       <div className="mb-4 flex flex-wrap gap-2">
-        <input className="input max-w-xs flex-1" placeholder={`Search ${schema.plural.toLowerCase()}…`} value={q} onChange={(e) => setQ(e.target.value)} />
+        <SearchField className="max-w-xs flex-1" placeholder={`Search ${schema.plural.toLowerCase()}…`} value={q} onChange={setQ} />
         {filters.map((k) => {
           const f = schema.fields.find((x) => x.key === k);
           if (!f) return null;

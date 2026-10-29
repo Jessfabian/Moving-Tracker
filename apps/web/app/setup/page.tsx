@@ -39,7 +39,6 @@ export default function SetupPage() {
     seedHousehold(store);
     const r = applyPlan(store);
     setResult(`Created ${r.created} tasks tailored to your family${r.rescheduled ? ` and rescheduled ${r.rescheduled}` : ""}.`);
-    setTimeout(() => router.push("/"), 1400);
   };
 
   return (
@@ -52,7 +51,7 @@ export default function SetupPage() {
       <ol className="mb-6 flex justify-between gap-2">
         {STEPS.map((s, i) => (
           <li key={s} className="flex-1">
-            <button onClick={() => (i === 0 || existing ? setStep(i) : null)} className="w-full text-left">
+            <button onClick={() => (i === 0 || existing ? setStep(i) : null)} className="w-full text-left" aria-current={i === step ? "step" : undefined}>
               <div className={`h-1.5 rounded-full ${i <= step ? "bg-indigo-600" : "bg-gray-200"}`} />
               <div className={`mt-1 text-xs font-semibold ${i === step ? "text-indigo-700" : "text-gray-400"}`}>
                 {i + 1}. {s}
@@ -159,7 +158,14 @@ export default function SetupPage() {
             {db.pets.length ? ` and ${db.pets.length} pet${db.pets.length > 1 ? "s" : ""}` : ""}, plus starter rooms, utilities, address-change and budget lists. You can edit everything.
           </p>
           {result ? (
-            <p className="rounded-xl bg-green-50 p-3 font-semibold text-green-800">✅ {result}</p>
+            <div className="space-y-3">
+              <p className="rounded-xl bg-green-50 p-3 font-semibold text-green-800" role="status">
+                ✅ {result}
+              </p>
+              <button className="btn-primary w-full" autoFocus onClick={() => router.push("/")}>
+                See my plan
+              </button>
+            </div>
           ) : (
             <div className="flex gap-2">
               <button className="btn-ghost" onClick={() => setStep(2)}>

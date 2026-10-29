@@ -5,6 +5,7 @@ import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore, 
 import { createPortal } from "react-dom";
 import { useLocalState } from "@/lib/hooks";
 import { useStore } from "@/lib/store-context";
+import { Glyph } from "./Symbols";
 
 // ---------- hidden cards & rows (per device, managed in Settings) ----------
 
@@ -115,7 +116,12 @@ function useSwipe(width: number, enabled = true) {
   const [dragging, setDragging] = useState(false);
   const g = useRef<{ x: number; y: number; base: number; lock: "x" | "y" | null; moved: boolean; pid: number } | null>(null);
   const suppress = useRef(false);
+  const press = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const open = offset !== 0 && !dragging;
+  const reveal = useCallback(() => {
+    setOffset(-width);
+    window.dispatchEvent(new CustomEvent(OPEN_EVENT, { detail: myId }));
+  }, [width, myId]);
 
   useEffect(() => {
     const onOther = (e: Event) => {
@@ -132,6 +138,17 @@ function useSwipe(width: number, enabled = true) {
         onPointerDown: (e: React.PointerEvent) => {
           if (e.pointerType === "mouse" && e.button !== 0) return;
           g.current = { x: e.clientX, y: e.clientY, base: offset, lock: null, moved: false, pid: e.pointerId };
+          clearTimeout(press.current);
+          // Long-press (touch) is the non-swipe way to reach the same actions.
+          if (e.pointerType !== "mouse" && offset === 0)
+            press.current = setTimeout(() => {
+              if (g.current && !g.current.lock) {
+                g.current = null;
+                suppress.current = true;
+                navigator.vibrate?.(10);
+                reveal();
+              }
+            }, 550);
         },
         onPointerMove: (e: React.PointerEvent) => {
           const s = g.current;
@@ -139,6 +156,7 @@ function useSwipe(width: number, enabled = true) {
           const dx = e.clientX - s.x;
           const dy = e.clientY - s.y;
           if (!s.lock) {
+            if (Math.abs(dx) > 8 || Math.abs(dy) > 8) clearTimeout(press.current);
             if (Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy) * 1.2) {
               s.lock = "x";
               setDragging(true);
@@ -154,6 +172,7 @@ function useSwipe(width: number, enabled = true) {
           setOffset(next);
         },
         onPointerUp: (e: React.PointerEvent) => {
+          clearTimeout(press.current);
           const s = g.current;
           g.current = null;
           if (!s || s.pid !== e.pointerId) return;
@@ -170,9 +189,14 @@ function useSwipe(width: number, enabled = true) {
           }
         },
         onPointerCancel: () => {
+          clearTimeout(press.current);
           g.current = null;
           setDragging(false);
           setOffset((o) => (o < -width / 2.5 ? -width : 0));
+        },
+        onContextMenu: (e: React.MouseEvent) => {
+          // iOS/Android fire this on long-press; we show our own actions instead of the browser menu.
+          if (g.current || suppress.current) e.preventDefault();
         },
         onClickCapture: (e: React.MouseEvent) => {
           if (suppress.current) {
@@ -184,7 +208,7 @@ function useSwipe(width: number, enabled = true) {
       }
     : {};
 
-  return { offset, dragging, open, close, handlers };
+  return { offset, dragging, open, close, reveal, handlers };
 }
 
 export interface SwipeAction {
@@ -218,13 +242,25 @@ function Actions({ actions, close, offset, width }: { actions: SwipeAction[]; cl
   );
 }
 
-/** iOS-style row: swipe left to reveal actions (Hide, Delete…). */
-export function SwipeRow({ actions, children, className = "", radius = "rounded-2xl" }: { actions: SwipeAction[]; children: ReactNode; className?: string; radius?: string }) {
+/**
+ * iOS-style row: swipe left (or long-press) to reveal actions (Hide, Delete…).
+ * HIG Gestures/Accessibility: the same actions are also real buttons for VoiceOver and keyboard users.
+ */
+export function SwipeRow({ actions, children, className = "", radius = "rounded-2xl", label }: { actions: SwipeAction[]; children: ReactNode; className?: string; radius?: string; label?: string }) {
   const width = actions.length * ACTION_W;
   const { offset, dragging, close, handlers } = useSwipe(width, actions.length > 0);
   return (
     <div className={`relative touch-pan-y ${offset !== 0 ? "overflow-hidden" : ""} ${radius} ${className}`} {...handlers}>
       {offset !== 0 && <Actions actions={actions} close={close} offset={offset} width={width} />}
+      {offset === 0 && actions.length > 0 && (
+        <div className="sr-only focus-within:not-sr-only focus-within:absolute focus-within:inset-y-0 focus-within:right-0 focus-within:z-10 focus-within:flex">
+          {actions.map((a) => (
+            <button key={a.label} type="button" className={`px-4 text-[13px] font-semibold text-white ${a.tone === "danger" ? "bg-red-500" : "bg-gray-500"}`} onClick={a.onClick}>
+              {label ? `${a.label} ${label}` : a.label}
+            </button>
+          ))}
+        </div>
+      )}
       <div className={`relative ${dragging ? "" : "transition-transform duration-200 ease-out"}`} style={{ transform: offset ? `translateX(${offset}px)` : undefined }}>
         {children}
       </div>
@@ -266,6 +302,7 @@ export function Card({
   children: ReactNode;
 }) {
   const [open, setOpen] = useLocalState<boolean>(`card:${id}`, defaultOpen);
+  const bodyId = useId();
   const hidden = useHiddenCards();
   const label = typeof title === "string" ? title : id;
   const width = ACTION_W;
@@ -288,6 +325,7 @@ export function Card({
             type="button"
             className="flex min-h-10 min-w-0 flex-1 touch-pan-y items-center gap-2 text-left select-none"
             aria-expanded={open}
+            aria-controls={bodyId}
             onClick={() => setOpen(!open)}
             {...handlers}
           >
@@ -303,14 +341,20 @@ export function Card({
           )}
           <button
             type="button"
-            aria-label={open ? "Collapse" : "Expand"}
+            aria-label={`${open ? "Collapse" : "Expand"} ${label}`}
+            aria-expanded={open}
+            aria-controls={bodyId}
             className={`grid h-8 w-8 shrink-0 place-items-center rounded-full transition ${ink ? "bg-white/10 text-white" : "bg-ink/5 text-gray-600"}`}
             onClick={() => setOpen(!open)}
           >
-            <span className={`inline-block text-xs transition-transform duration-200 ${open ? "" : "-rotate-90"}`}>▼</span>
+            <Glyph name="chevron" className={`h-4 w-4 transition-transform duration-200 ${open ? "" : "-rotate-90"}`} strokeWidth={2.4} />
           </button>
         </div>
-        {open && <div className={`animate-fade ${bodyClassName}`}>{children}</div>}
+        {open && (
+          <div id={bodyId} className={`animate-fade ${bodyClassName}`}>
+            {children}
+          </div>
+        )}
       </section>
     </div>
   );
