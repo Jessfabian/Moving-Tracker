@@ -472,6 +472,8 @@ function CoverImg({ src, onMissing }: { src: string; onMissing?: () => void }) {
 function BookOverview({ draft, onUse, onLookup }: { draft: Row; onUse: (v: number) => void; onLookup: () => void }) {
   const cover = typeof draft.cover_url === "string" ? draft.cover_url : "";
   const isbn = normalizeIsbn(String(draft.isbn ?? "")) ?? "";
+  const hasValue = draft.est_value != null && draft.est_value !== "";
+  const [showPrices, setShowPrices] = useState(!hasValue);
   const authors = Array.isArray(draft.authors) ? (draft.authors as string[]).filter(Boolean).join(", ") : String(draft.authors ?? "");
   const meta = [
     draft.published ? yearOnly(String(draft.published)) : "",
@@ -510,22 +512,55 @@ function BookOverview({ draft, onUse, onLookup }: { draft: Row; onUse: (v: numbe
           </div>
         </div>
       </div>
-      {isbn && (
+      {isbn && (hasValue && !showPrices ? (
+        <button type="button" className="min-h-11 text-[13px] font-semibold text-indigo-700" onClick={() => setShowPrices(true)}>
+          ↻ Recheck used prices
+        </button>
+      ) : (
         <LivePrices
           auto
           kind="book"
           isbn={isbn}
-          actions={(r) => (r.summary.suggested != null ? [{ label: `Use ${formatMoney(r.summary.suggested)} as resale value`, onClick: () => onUse(r.summary.suggested!) }] : [])}
+          actions={(r) => (r.summary.suggested != null ? [{ label: `Use ${formatMoney(r.summary.suggested)} as resale value`, onClick: () => { onUse(r.summary.suggested!); setShowPrices(false); } }] : [])}
         />
-      )}
+      ))}
     </div>
   );
 }
 
-export function ProductLinkImport({ draft, setDraft }: { draft: Row; setDraft: (fn: (d: Row) => Row) => void }) {
+/** Compact "already done" line that replaces a finished helper panel; tap Change to bring it back. */
+function DoneRow({ title, detail, action = "Change", onOpen }: { title: string; detail?: string | null; action?: string; onOpen: () => void }) {
+  return (
+    <div className="flex min-h-12 items-center gap-3 rounded-2xl bg-emerald-50 px-3 py-2">
+      <span aria-hidden className="grid h-7 w-7 flex-none place-items-center rounded-full bg-emerald-500 text-[13px] font-bold text-white">
+        ✓
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-[14px] font-semibold text-emerald-900">{title}</div>
+        {detail && <div className="truncate text-[12px] text-emerald-800/70">{detail}</div>}
+      </div>
+      <button type="button" className="min-h-11 flex-none px-2 text-[13px] font-semibold text-emerald-700" onClick={onOpen}>
+        {action}
+      </button>
+    </div>
+  );
+}
+
+function hostOf(link: unknown): string {
+  try {
+    return new URL(String(link)).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
+export function ProductLinkImport({ draft, setDraft, done, onOpen, onClose, onFilled }: { draft: Row; setDraft: (fn: (d: Row) => Row) => void; done?: boolean; onOpen?: () => void; onClose?: () => void; onFilled?: () => void }) {
   const [url, setUrl] = useState(String(draft.product_url ?? ""));
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  if (done && onOpen) {
+    return <DoneRow title={`Linked to ${hostOf(draft.product_url) || "store page"}`} detail={msg} onOpen={onOpen} />;
+  }
   const run = async (raw = url) => {
     const link = raw.trim();
     if (!/^https?:\/\//i.test(link)) return setMsg("Paste the full link, starting with https://");
@@ -543,6 +578,7 @@ export function ProductLinkImport({ draft, setDraft }: { draft: Row; setDraft: (
       setMsg(
         `Filled in “${p.name}”${p.price != null ? ` · ${formatMoney(p.price)} new` : " — add the price"}${got ? ` (name, ${got})` : ""} from ${p.source}.${p.note ? ` ${p.note}.` : ""}`,
       );
+      onFilled?.();
     } catch {
       setMsg("Couldn't open that link — fill the details in yourself.");
     } finally {
@@ -562,6 +598,10 @@ export function ProductLinkImport({ draft, setDraft }: { draft: Row; setDraft: (
           placeholder="Paste an Amazon, Target, IKEA… link"
           value={url}
           onChange={(e) => setUrl(e.target.value)}
+          onBlur={() => {
+            const t = url.trim();
+            if (!busy && /^https?:\/\/\S+$/i.test(t) && t !== draft.product_url) void run(t);
+          }}
           onPaste={(e) => {
             const t = e.clipboardData.getData("text").trim();
             if (/^https?:\/\/\S+$/i.test(t)) {
@@ -577,11 +617,16 @@ export function ProductLinkImport({ draft, setDraft }: { draft: Row; setDraft: (
             }
           }}
         />
-        <button type="button" className="btn-secondary flex-none" onClick={() => void run()} disabled={busy}>
+        <button type="button" className="btn-secondary flex-none" onMouseDown={(e) => e.preventDefault()} onClick={() => void run()} disabled={busy}>
           {busy ? "…" : "Fill in"}
         </button>
       </div>
       <p className="mt-1 text-xs text-gray-500">{msg ?? "We pull the name, brand, price and picture. Some stores (like Amazon) block this — then we use the name in the link."}</p>
+      {onClose && !!draft.product_url && (
+        <button type="button" className="mt-1 min-h-11 text-[13px] font-semibold text-indigo-700" onClick={onClose}>
+          Done
+        </button>
+      )}
     </div>
   );
 }
@@ -627,6 +672,15 @@ export function EntityForm<T extends TableName>({
   const collapsible = table === "apartments";
 
   const scanTarget = table === "books" ? "isbn" : table === "items" ? "barcode" : null;
+  const [openScan, setOpenScan] = useState(false);
+  const [openLink, setOpenLink] = useState(false);
+  const [openPrices, setOpenPrices] = useState(false);
+  const has = (k: string) => draft[k] != null && String(draft[k]).trim() !== "";
+  const scanDone = !!scanTarget && !openScan && has(scanTarget) && has(schema.titleField);
+  const linkDone = table === "items" && !openLink && has("product_url");
+  const pricesDone = table === "items" && !openPrices && has("retail_price") && has("est_value");
+  // Filled-in lookup fields stay out of the way until their panel is reopened.
+  const doneKeys = [...(scanDone && scanTarget ? [scanTarget] : []), ...((scanDone || linkDone) && has("image_url") ? ["image_url"] : [])];
 
   const runLookup = async (code: string) => {
     setLookupMsg("Looking up…");
@@ -640,12 +694,14 @@ export function EntityForm<T extends TableName>({
       const hadCover = !!draft.cover_url && !/covers\.openlibrary\.org\/b\/isbn\/(?!.*default=false)/.test(String(draft.cover_url));
       setDraft((d) => ({ ...d, ...bookPatch(info), cover_url: info.cover_url || d.cover_url || "" }));
       setLookupMsg(`Found “${info.title}”${!hadCover ? (info.cover_url ? " · cover found" : " · no cover anywhere yet") : ""}`);
+      setOpenScan(false);
     } else {
       set("barcode", code);
       const p = await lookupProduct(code);
       if (!p) return setLookupMsg("Product not found — add a name and photo.");
       setDraft((d) => ({ ...d, ...productToItemPatch(p, d as Parameters<typeof productToItemPatch>[1]) }));
       setLookupMsg(`Found “${p.name}”${p.price != null ? ` · retail ≈ ${formatMoney(p.price)}` : ""}${p.model ? ` · model ${p.model}` : ""}`);
+      setOpenScan(false);
     }
   };
 
@@ -678,7 +734,19 @@ export function EntityForm<T extends TableName>({
         save();
       }}
     >
-      {scanTarget && (
+      {scanTarget && scanDone && (
+        <DoneRow
+          title={table === "books" ? `ISBN ${String(draft.isbn)}` : `Barcode ${String(draft.barcode)}`}
+          detail={lookupMsg ?? (table === "books" ? "Book info filled in" : "Product info filled in")}
+          onOpen={() => setOpenScan(true)}
+        />
+      )}
+      {scanTarget && !scanDone && linkDone && !openScan && (
+        <button type="button" className="min-h-11 text-[13px] font-semibold text-indigo-700" onClick={() => setScan(true)}>
+          ▦ Scan a barcode too
+        </button>
+      )}
+      {scanTarget && !scanDone && !(linkDone && !openScan) && (
         <div className="flex flex-wrap items-center gap-2 rounded-xl bg-indigo-50 p-3">
           <button type="button" className="btn-primary" onClick={() => setScan(true)}>
             ▦ Scan {table === "books" ? "ISBN barcode" : "barcode"}
@@ -694,10 +762,17 @@ export function EntityForm<T extends TableName>({
             </button>
           ) : null}
           {lookupMsg && <span className="text-sm text-indigo-800">{lookupMsg}</span>}
+          {openScan && has(scanTarget) && has(schema.titleField) && (
+            <button type="button" className="ml-auto min-h-11 px-2 text-[13px] font-semibold text-indigo-700" onClick={() => setOpenScan(false)}>
+              Done
+            </button>
+          )}
         </div>
       )}
       {table === "apartments" && <ListingImport draft={draft} setDraft={setDraft} />}
-      {table === "items" && !hide.includes("product_url") && <ProductLinkImport draft={draft} setDraft={setDraft} />}
+      {table === "items" && !hide.includes("product_url") && (
+        <ProductLinkImport draft={draft} setDraft={setDraft} done={linkDone} onOpen={() => setOpenLink(true)} onClose={() => setOpenLink(false)} onFilled={() => setOpenLink(false)} />
+      )}
       {isFlight && <FlightLookup draft={draft} setDraft={setDraft} />}
       {table === "moves" && <MoveDistance fromZip={draft.from_zip} toZip={draft.to_zip} value={draft.distance_miles} onChange={(m) => set("distance_miles", m)} />}
       {table === "items" && (draft.image_url || draft.retail_price != null) ? (
@@ -732,7 +807,11 @@ export function EntityForm<T extends TableName>({
           </div>
         </div>
       ) : null}
-      {table === "items" && String(draft.name ?? "").trim().length >= 3 ? (
+      {pricesDone ? (
+        <button type="button" className="min-h-11 text-[13px] font-semibold text-indigo-700" onClick={() => setOpenPrices(true)}>
+          ↻ Recheck live prices
+        </button>
+      ) : table === "items" && String(draft.name ?? "").trim().length >= 3 ? (
         <LivePrices
           kind="item"
           query={itemPriceQuery(draft)}
@@ -743,7 +822,10 @@ export function EntityForm<T extends TableName>({
             return [
               {
                 label: `Use ${formatMoney(typical)} new → ${formatMoney(used)} used`,
-                onClick: () => setDraft((d) => ({ ...d, retail_price: typical, est_value: used })),
+                onClick: () => {
+                  setDraft((d) => ({ ...d, retail_price: typical, est_value: used }));
+                  setOpenPrices(false);
+                },
               },
             ];
           }}
@@ -752,7 +834,9 @@ export function EntityForm<T extends TableName>({
       {table === "books" && (draft.title || draft.isbn) ? (
         <BookOverview draft={draft} onUse={(v) => set("est_value", v)} onLookup={() => void runLookup(String(draft.isbn))} />
       ) : null}
-      {sections.map((s, si) => {
+      {sections.map((s0, si) => {
+        const s = doneKeys.length ? { ...s0, fields: s0.fields.filter((f) => !doneKeys.includes(f.key)) } : s0;
+        if (!s.fields.length) return null;
         const grid = (
           <div className="grid grid-cols-1 gap-3 @md:grid-cols-2">
             {s.fields.map((f) => (

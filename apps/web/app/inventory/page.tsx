@@ -390,7 +390,7 @@ export default function InventoryPage() {
       </SelectActions>
 
       <Drawer open={!!editing} onClose={() => setEditing(null)} title={editing?.row ? editing.row.name : "New item"}>
-        {editing?.row && <PriceIdea item={editing.row} onUse={(row) => setEditing({ row })} />}
+        {editing?.row && <PriceIdea key={editing.row.id} item={editing.row} onUse={(row) => setEditing({ row })} />}
         {editing && (
           <EntityForm
             key={editing.row ? `${editing.row.id}:${editing.row.est_value}` : JSON.stringify(editing.initial?.barcode ?? editing.initial?.photos?.[0]?.id ?? "new")}
@@ -438,6 +438,23 @@ function PriceIdea({ item, onUse }: { item: Item; onUse: (row: Item) => void }) 
   const store = useStore();
   const idea = itemPriceIdea(item);
   const verdict = { sell: "💰 Worth selling", keep: "🚚 Worth moving", donate: "🎁 Donate it", either: "🤷 Your call" }[idea.verdict];
+  const [open, setOpen] = useState(item.est_value == null);
+  if (!open && item.est_value != null) {
+    return (
+      <div className="mb-4 flex min-h-12 items-center gap-3 rounded-2xl bg-emerald-50 px-3 py-2">
+        <span aria-hidden className="grid h-7 w-7 flex-none place-items-center rounded-full bg-emerald-500 text-[13px] font-bold text-white">
+          ✓
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[14px] font-semibold text-emerald-900">Value set: {formatMoney(item.est_value)}</div>
+          <div className="truncate text-[12px] text-emerald-800/70">{verdict}</div>
+        </div>
+        <button type="button" className="min-h-11 flex-none px-2 text-[13px] font-semibold text-emerald-700" onClick={() => setOpen(true)}>
+          Price idea
+        </button>
+      </div>
+    );
+  }
   return (
     <div className="mb-4 rounded-2xl border border-indigo-100 bg-indigo-50/60 p-3 text-sm">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -465,6 +482,7 @@ function PriceIdea({ item, onUse }: { item: Item; onUse: (row: Item) => void }) 
         {item.est_value !== idea.likely && (
           <button type="button" className="btn-secondary py-1 text-xs" onClick={() => {
               const row = store.update("items", item.id, { est_value: idea.likely });
+              setOpen(false);
               if (row) onUse(row);
             }}>
             Use {formatMoney(idea.likely)} as value
