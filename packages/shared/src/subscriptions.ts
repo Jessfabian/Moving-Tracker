@@ -1,4 +1,4 @@
-import { monthlyAmount } from './cashflow';
+import { addPeriod, monthlyAmount } from './cashflow';
 import type { Bill, Frequency, Subscription } from './types';
 import { daysBetween } from './util';
 
@@ -236,6 +236,8 @@ export function parseDateText(text: string, fallbackYear?: number): string | nul
     const y = m[3]!.length === 2 ? 2000 + +m[3]! : +m[3]!;
     if (validDate(y, +m[1]!, +m[2]!)) return iso(y, +m[1]!, +m[2]!);
   }
+  m = /(?:^|[^\d/])(\d{1,2})\/(\d{1,2})(?![\d/])/.exec(text);
+  if (m && fallbackYear && validDate(fallbackYear, +m[1]!, +m[2]!)) return iso(fallbackYear, +m[1]!, +m[2]!);
   m = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s*(20\d{2})?/i.exec(text);
   if (m) {
     const y = m[3] ? +m[3] : fallbackYear;
@@ -258,28 +260,6 @@ export function frequencyIn(text: string): Frequency | null {
   if (/\b(monthly|per\s?month|a\s?month|\/\s?(mo|month))\b/i.test(text)) return 'monthly';
   return null;
 }
-
-export function addPeriod(date: string, freq: Frequency, times = 1): string {
-  const [y, m, d] = date.split('-').map(Number) as [number, number, number];
-  const days = { weekly: 7, biweekly: 14, semimonthly: 15 }[freq as 'weekly'];
-  if (days) {
-    const t = new Date(Date.UTC(y, m - 1, d + days * times));
-    return t.toISOString().slice(0, 10);
-  }
-  const months = (freq === 'yearly' ? 12 : freq === 'quarterly' ? 3 : 1) * times;
-  const target = new Date(Date.UTC(y, m - 1 + months, 1));
-  const last = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
-  return iso(target.getUTCFullYear(), target.getUTCMonth() + 1, Math.min(d, last));
-}
-
-/** Rolls a past due date forward until it's today or later. */
-export function rollForward(date: string | null | undefined, freq: Frequency, today: string): string | null {
-  if (!date) return null;
-  let d = date;
-  for (let i = 0; d < today && i < 600; i++) d = addPeriod(d, freq);
-  return d;
-}
-
 
 // ---------- costs & alerts ----------
 
@@ -478,7 +458,7 @@ export function splitEmails(text: string): string[] {
   const parts = t
     .split(/\n(?=\s*(?:-{3,}.*(?:forwarded|original).*-{3,}|from:\s.+\n(?:.*\n){0,3}?\s*(?:sent|date|subject|to):))/i)
     .flatMap((p) => p.split(/\n\s*(?:={5,}|-{5,}|_{5,})\s*\n/))
-    .map((p) => p.trim())
+    .map((p) => p.replace(/^\s*-{3,}.*(?:forwarded|original).*-{3,}\s*$/gim, '').trim())
     .filter((p) => p.length > 20);
   return parts.length ? parts : [t];
 }

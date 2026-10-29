@@ -1,5 +1,6 @@
 "use client";
 
+import { Card } from "@/components/Swipe";
 import {
   NO_WAGE_TAX_STATES,
   flightCode,
@@ -232,8 +233,7 @@ function TripTop({ api }: { api: CrudApi<"travel"> }) {
           </div>
         </div>
 
-        <div className="card">
-          <h2 className="font-display text-xl font-bold tracking-tight">Stipend vs. trip costs</h2>
+        <Card id="travel.stipend-costs" title="Stipend vs. trip costs">
           <p className="mt-1 text-xs text-gray-500">We pay up front; the relocation stipend arrives on his paychecks. Amounts are take-home after tax (22% federal + 7.65% Social Security/Medicare{taxState ? ` + ${taxState} state${(NO_WAGE_TAX_STATES as readonly string[]).includes(taxState.toUpperCase()) ? " ($0)" : ""}` : ""}).</p>
           {cov.checks.length === 0 || !cov.checks.some((c) => c.date) ? (
             <div className="mt-4">
@@ -280,7 +280,7 @@ function TripTop({ api }: { api: CrudApi<"travel"> }) {
                 : `Stipend take-home left for the move after the trip: ${formatMoney(cov.leftover)}.`}
             </div>
           )}
-        </div>
+        </Card>
       </div>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat label="Covered by stipend" icon="💼" value={formatMoney(trip.covered)} sub={`${formatMoney(trip.reimbursed)} paid back`} />

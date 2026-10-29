@@ -1,5 +1,5 @@
 import type { Snapshot } from './csv';
-import { upcomingBills } from './cashflow';
+import { addPeriod, rollForward, upcomingBills } from './cashflow';
 import { addDays, toDateString } from './util';
 
 export type CalendarSource = 'appointment' | 'task' | 'move' | 'apartment' | 'document' | 'utility' | 'bill' | 'birthday' | 'travel' | 'money';
@@ -161,6 +161,15 @@ export function calendarEvents(db: Snapshot, range?: { from: string; to: string 
         push({ id: `bill-${due.bill.id}-${due.date}`, date: due.date, title: `${due.bill.name} due`, source: 'bill', kind: due.bill.autopay ? 'Autopay' : 'Bill', href: '/bills' });
       }
       cursor = addDays(cursor, 28);
+    }
+    // Subscription renewals (and free trials ending) for the ones set to remind you.
+    for (const x of live(db.subscriptions)) {
+      if (!x.remind || !x.next_due || !['active', 'free_trial', 'cancelling'].includes(x.status)) continue;
+      for (let i = 0, d = rollForward(x.next_due, x.frequency, range.from)!; d <= range.to && i < 60; i++, d = addPeriod(d, x.frequency)) {
+        const trial = x.status === 'free_trial' && i === 0;
+        push({ id: `sub-${x.id}-${d}`, date: d, title: trial ? `${x.name} free trial ends` : `${x.name} renews${x.amount ? ` · $${x.amount.toFixed(2)}` : ''}`, source: 'bill', kind: trial ? 'Trial ends' : 'Subscription', href: '/subscriptions', important: trial });
+        if (trial) break;
+      }
     }
   }
 

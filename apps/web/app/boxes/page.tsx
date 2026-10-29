@@ -11,6 +11,7 @@ import { useTwoPane } from "@/lib/hooks";
 import Link from "next/link";
 import { printHtml } from "@/lib/media";
 import { useDb, useStore } from "@/lib/store-context";
+import { SelectActions, SelectBar, SelectCircle, useBulkDelete, useBulkUpdate, useSelection } from "@/components/Selection";
 
 const STATUS_COLORS: Record<string, string> = { empty: "#9ca3af", packing: "#d97706", packed: "#2563eb", loaded: "#7c3aed", delivered: "#0891b2", unpacked: "#16a34a" };
 
@@ -126,7 +127,6 @@ export default function BoxesPage() {
   const [status, setStatus] = useState("");
   const [roomId, setRoomId] = useState("");
   const [scan, setScan] = useState(false);
-  const [checked, setChecked] = useState<Set<string>>(new Set());
   const [msg, setMsg] = useState<string | null>(null);
   const [showSupplies, setShowSupplies] = useState(false);
   const supplies = useSupplies();
@@ -140,6 +140,9 @@ export default function BoxesPage() {
     [db.boxes, status, roomId],
   );
   const current = db.boxes.find((b) => b.id === selected) ?? null;
+  const sel = useSelection(boxes.map((b) => b.id));
+  const bulk = useBulkUpdate<Box>("boxes", sel, "box");
+  const bulkDelete = useBulkDelete("boxes", sel, "box");
   const counts = BOX_STATUSES.map((s) => ({ ...s, n: db.boxes.filter((b) => b.status === s.value).length }));
   const delivered = db.boxes.filter((b) => b.status === "delivered" || b.status === "unpacked").length;
 
@@ -160,26 +163,18 @@ export default function BoxesPage() {
 
   const list = (
     <div className="space-y-2">
+      {boxes.length > 0 && (sel.active ? <SelectBar sel={sel} noun="box" /> : <div className="flex justify-end"><SelectBar sel={sel} /></div>)}
       {boxes.map((b) => {
         const room = db.rooms.find((r) => r.id === b.room_id);
         const n = db.items.filter((i) => i.box_id === b.id).length + db.books.filter((x) => x.box_id === b.id).length;
         return (
-          <div key={b.id} className={`flex items-center gap-3 rounded-2xl border bg-white px-3 py-2 ${selected === b.id ? "border-indigo-500 ring-1 ring-indigo-500" : "border-gray-200"}`} style={{ borderLeft: `6px solid ${room?.color || "#e5e7eb"}` }}>
-            <input
-              type="checkbox"
-              className="h-5 w-5 accent-indigo-600"
-              aria-label={`Select box ${b.number}`}
-              checked={checked.has(b.id)}
-              onChange={() =>
-                setChecked((s) => {
-                  const x = new Set(s);
-                  if (x.has(b.id)) x.delete(b.id);
-                  else x.add(b.id);
-                  return x;
-                })
-              }
-            />
-            <button className="flex min-w-0 flex-1 items-center gap-3 text-left" onClick={() => setSelected(b.id)}>
+          <div key={b.id} className={`flex items-center gap-3 rounded-2xl border bg-white px-3 py-2 ${sel.has(b.id) ? "border-accent bg-accent/[0.05]! ring-1 ring-accent" : selected === b.id && !sel.active ? "border-indigo-500 ring-1 ring-indigo-500" : "border-gray-200"}`} style={{ borderLeft: `6px solid ${room?.color || "#e5e7eb"}` }}>
+            {sel.active && (
+              <button type="button" role="checkbox" aria-checked={sel.has(b.id)} aria-label={`Select box ${b.number}`} className="-my-2 -ml-1 flex min-h-11 w-9 flex-none items-center justify-center" onClick={() => sel.toggle(b.id)}>
+                <SelectCircle on={sel.has(b.id)} />
+              </button>
+            )}
+            <button className="flex min-w-0 flex-1 items-center gap-3 text-left" onClick={() => (sel.active ? sel.toggle(b.id) : setSelected(b.id))}>
               <span className="w-12 text-xl font-black">#{b.number}</span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate font-semibold">
@@ -196,6 +191,32 @@ export default function BoxesPage() {
           </div>
         );
       })}
+      <SelectActions sel={sel} noun="box">
+        <div className="grid grid-cols-2 gap-2 text-sm">
+          <button className="min-h-11 truncate rounded-xl bg-white px-3 font-semibold text-ink" onClick={() => void buildLabelSheet(db, sel.ids, { householdName: db.moves[0]?.title }).then(printHtml)}>
+            🖨️ Print {sel.count || ""} label{sel.count === 1 ? "" : "s"}
+          </button>
+          <select className="min-h-11 min-w-0 truncate rounded-xl bg-white/15 px-3" value="" aria-label="Set status" onChange={(e) => e.target.value && bulk({ status: e.target.value as Box["status"] }, optionLabel(BOX_STATUSES, e.target.value))}>
+            <option value="">Status…</option>
+            {BOX_STATUSES.map((s) => (
+              <option key={s.value} value={s.value}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+          <select className="min-h-11 min-w-0 truncate rounded-xl bg-white/15 px-3" value="" aria-label="Move to room" onChange={(e) => e.target.value && bulk({ room_id: e.target.value }, `Moved to ${db.rooms.find((r) => r.id === e.target.value)?.name ?? "room"}`)}>
+            <option value="">Room…</option>
+            {db.rooms.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
+            ))}
+          </select>
+          <button className="min-h-11 rounded-xl bg-red-600 px-3 font-semibold" onClick={bulkDelete}>
+            🗑 Delete
+          </button>
+        </div>
+      </SelectActions>
       {!boxes.length && (
         <Empty icon="📦" title={db.boxes.length ? "No boxes match" : "No boxes yet"}>
           Create a box, print its QR label, and scan it any time to see what&apos;s inside.
@@ -221,9 +242,9 @@ export default function BoxesPage() {
             <button
               className="btn-secondary"
               disabled={!db.boxes.length}
-              onClick={() => void buildLabelSheet(db, checked.size ? [...checked] : boxes.map((b) => b.id), { householdName: db.moves[0]?.title }).then(printHtml)}
+              onClick={() => void buildLabelSheet(db, boxes.map((b) => b.id), { householdName: db.moves[0]?.title }).then(printHtml)}
             >
-              🖨️ Print {checked.size ? `${checked.size} labels` : "all labels"}
+              🖨️ Print all labels
             </button>
             <button className="btn-secondary" disabled={!db.boxes.length} onClick={() => void buildReport("manifest", db).then(printHtml)}>
               📋 Manifest

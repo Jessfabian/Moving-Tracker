@@ -3,6 +3,7 @@
 import { bestQuote, formatMoney, optionLabel, quoteFlags, SCHEMAS, type MoverQuote, type QuoteFlag } from "@moving/shared";
 import { useState, type ReactNode } from "react";
 import { CrudPage, StatusPill } from "@/components/CrudPage";
+import { Card } from "@/components/Swipe";
 import { PageHeader, Segmented } from "@/components/ui";
 import { useDb, useStore } from "@/lib/store-context";
 import { methodFor, moveEstimates, QuoteKit } from "./QuoteKit";
@@ -102,7 +103,7 @@ function Comparison() {
     ["Rating", (q) => (q.rating ? "★".repeat(q.rating) : "—")],
   ];
   return (
-    <div className="card mb-5 overflow-x-auto p-0">
+    <Card id="quotes.compare" title="Side-by-side" className="mb-5" bodyClassName="mt-4 -mx-5 -mb-5 overflow-x-auto">
       <table className="w-full min-w-[640px] text-sm">
         <thead>
           <tr className="border-b border-gray-200 bg-gray-50">
@@ -147,13 +148,12 @@ function Comparison() {
           </tr>
         </tbody>
       </table>
-    </div>
+    </Card>
   );
 }
 
 export default function QuotesPage() {
-  const db = useDb();
-  const [tab, setTab] = useState<Tab>(() => (db.quotes.some((q) => !q.deleted && q.price != null) ? "compare" : "get"));
+  const [tab, setTab] = useState<Tab>(() => (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("tab") === "compare" ? "compare" : "get"));
 
   if (tab === "get")
     return (

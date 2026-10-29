@@ -40,6 +40,7 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
       { href: "/apartments", label: "Apartments & rentals", icon: "🏢" },
       { href: "/documents", label: "Paperwork", icon: "📄" },
       { href: "/bills", label: "Bills & income", icon: "🧾" },
+      { href: "/subscriptions", label: "Subscriptions", icon: "🔁" },
       { href: "/budget", label: "Moving budget", icon: "💵" },
       { href: "/utilities", label: "Utilities", icon: "💡" },
       { href: "/addresses", label: "Address changes", icon: "📮" },

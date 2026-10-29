@@ -12,6 +12,7 @@ import {
   type MoveSize,
 } from "@moving/shared";
 import Link from "next/link";
+import { Card } from "@/components/Swipe";
 import { useState } from "react";
 import { useDb, useStore } from "@/lib/store-context";
 
@@ -58,14 +59,13 @@ export function InstantQuoteCard({ size, estimates }: { size: MoveSize; estimate
   const q = result && !("error" in result) ? result : null;
 
   return (
-    <div className="card grid gap-5 lg:grid-cols-[1fr_1.1fr]">
+    <Card id="quotes.instant" title="Get an instant online quote" bodyClassName="mt-2 grid gap-5 lg:grid-cols-[1fr_1.1fr]" summary={q ? formatMoney(Math.round(q.total)) : undefined}>
       <div>
         <div className="flex items-center gap-2">
           <span className="chip bg-lime text-ink">⚡ Instant</span>
           <span className="chip bg-ink/5 text-gray-600">free · no sign-up</span>
         </div>
-        <h2 className="mt-2 font-display text-xl font-bold tracking-tight">Get an instant online quote</h2>
-        <p className="mt-1 text-sm text-gray-600">
+        <p className="mt-2 text-sm text-gray-600">
           From <b>{NGM_PROVIDER.name}</b> (USDOT {NGM_PROVIDER.usdot}), a licensed interstate carrier that publishes its tariff pricing. It&apos;s one company&apos;s price — use it as a real-world benchmark next to the quotes you request.
         </p>
         <p className="mt-2 rounded-xl bg-sand p-2.5 text-xs text-gray-700">
@@ -171,6 +171,6 @@ export function InstantQuoteCard({ size, estimates }: { size: MoveSize; estimate
           </div>
         )}
       </div>
-    </div>
+    </Card>
   );
 }

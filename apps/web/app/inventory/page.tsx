@@ -11,6 +11,8 @@ import { Scanner } from "@/components/Scanner";
 import { Drawer, Empty, PageHeader } from "@/components/ui";
 import { compressImage } from "@/lib/media";
 import { useDb, useStore } from "@/lib/store-context";
+import { SwipeRow, showUndo, useDeleteWithUndo, useHiddenRows, type SwipeAction } from "@/components/Swipe";
+import { SelectActions, SelectBar, SelectCircle, useBulkDelete, useBulkUpdate, useSelection } from "@/components/Selection";
 
 type Editing = { row: Item | null; initial?: Partial<Item> } | null;
 
@@ -28,21 +30,32 @@ export default function InventoryPage() {
   const [scan, setScan] = useState(false);
   const [roomScan, setRoomScan] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [quick, setQuick] = useState("");
   const photoRef = useRef<HTMLInputElement>(null);
 
   const rooms = useMemo(() => [...db.rooms].sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name)), [db.rooms]);
   const room = rooms.find((r) => r.id === roomId);
+  const hiddenRows = useHiddenRows();
+  const del = useDeleteWithUndo();
+  const rowActions = (i: Item): SwipeAction[] => [
+    { label: "Hide", icon: "🙈", onClick: () => { hiddenRows.hide({ table: "items", id: i.id, label: i.name }); showUndo(`Hid “${i.name}” · find it in Settings`, () => hiddenRows.unhide("items", i.id)); } },
+    { label: "Delete", icon: "🗑", tone: "danger", onClick: () => del("items", i.id, `“${i.name}”`) },
+  ];
   const items = useMemo(() => {
     const needle = q.toLowerCase();
+    const hidden = new Set(hiddenRows.rows.filter((h) => h.table === "items").map((h) => h.id));
     return db.items
+      .filter((i) => !hidden.has(i.id))
       .filter((i) => !roomId || (roomId === "none" ? !i.room_id : i.room_id === roomId))
       .filter((i) => !disp || (disp === "car" ? i.in_car : i.disposition === disp))
       .filter((i) => !cat || i.category === cat)
       .filter((i) => !needle || `${i.name} ${i.brand} ${i.notes} ${i.barcode}`.toLowerCase().includes(needle))
       .sort((a, b) => b.created_at.localeCompare(a.created_at));
-  }, [db.items, roomId, disp, cat, q]);
+  }, [db.items, roomId, disp, cat, q, hiddenRows.rows]);
+  const sel = useSelection(items.map((i) => i.id));
+  const bulk = useBulkUpdate<Item>("items", sel);
+  const bulkDelete = useBulkDelete("items", sel);
+  const tapItem = (i: Item) => (sel.active ? sel.toggle(i.id) : setEditing({ row: i }));
 
   const defaults = (): Partial<Item> => ({ room_id: roomId && roomId !== "none" ? roomId : null });
 
@@ -84,19 +97,6 @@ export default function InventoryPage() {
     );
     setQuick("");
   };
-
-  const bulk = (patch: Partial<Item>) => {
-    for (const id of selected) store.update("items", id, patch, { silent: true });
-    setSelected(new Set());
-  };
-
-  const toggle = (id: string) =>
-    setSelected((s) => {
-      const n = new Set(s);
-      if (n.has(id)) n.delete(id);
-      else n.add(id);
-      return n;
-    });
 
   const roomStats = (id: string | null) => {
     const its = db.items.filter((i) => (id ? i.room_id === id : !i.room_id));
@@ -219,56 +219,10 @@ export default function InventoryPage() {
             </option>
           ))}
         </select>
-        <button className="btn-secondary" onClick={() => setSelected(selected.size === items.length ? new Set() : new Set(items.map((i) => i.id)))}>
-          {selected.size === items.length && items.length ? "Clear selection" : "Select all"}
-        </button>
+        {!sel.active && <SelectBar sel={sel} />}
       </div>
 
-      {selected.size > 0 && (
-        <div className="sticky top-14 z-20 mb-4 grid grid-cols-4 gap-2 rounded-2xl bg-gray-900 p-3 text-sm text-white short:top-2 lg:top-2 lg:flex lg:flex-wrap lg:items-center">
-          <span className="col-span-3 self-center font-semibold">{selected.size} selected</span>
-          {DISPOSITIONS.map((d) => (
-            <button key={d.value} className="min-h-11 truncate rounded-xl px-2 font-medium lg:min-h-9" style={{ background: DISPOSITION_COLORS[d.value] }} onClick={() => bulk({ disposition: d.value as Item["disposition"] })}>
-              {d.label}
-            </button>
-          ))}
-          <button className="col-span-2 min-h-11 truncate rounded-xl bg-sky-600 px-2 font-medium lg:min-h-9" onClick={() => bulk({ in_car: true, disposition: "move" })}>
-            🚗 In our car
-          </button>
-          <button className="col-span-2 min-h-11 truncate rounded-xl bg-gray-700 px-2 font-medium lg:min-h-9" onClick={() => bulk({ in_car: false })}>
-            🚚 Movers take it
-          </button>
-          <select className="col-span-2 min-h-11 min-w-0 rounded-xl bg-gray-700 px-2 lg:min-h-9" value="" onChange={(e) => e.target.value && bulk({ room_id: e.target.value })}>
-            <option value="">Move to room…</option>
-            {rooms.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name}
-              </option>
-            ))}
-          </select>
-          <select className="col-span-2 min-h-11 min-w-0 rounded-xl bg-gray-700 px-2 lg:min-h-9" value="" onChange={(e) => e.target.value && bulk({ box_id: e.target.value })}>
-            <option value="">Pack in box…</option>
-            {[...db.boxes]
-              .sort((a, b) => a.number - b.number)
-              .map((b) => (
-                <option key={b.id} value={b.id}>
-                  #{b.number} {b.label}
-                </option>
-              ))}
-          </select>
-          <button
-            className="col-start-4 row-start-1 min-h-11 rounded-xl bg-red-600 px-2 lg:ml-auto lg:min-h-9"
-            onClick={() => {
-              if (confirm(`Delete ${selected.size} items?`)) {
-                for (const id of selected) store.remove("items", id);
-                setSelected(new Set());
-              }
-            }}
-          >
-            Delete
-          </button>
-        </div>
-      )}
+      {sel.active && <SelectBar sel={sel} className="mb-3" />}
 
       {items.length > 0 && (
         <div className="ios-list md:grid md:grid-cols-2 lg:hidden" style={{ ["--ios-sep" as string]: "6.25rem" }}>
@@ -277,11 +231,14 @@ export default function InventoryPage() {
             const r = !roomId ? rooms.find((x) => x.id === i.room_id) : null;
             const color = DISPOSITION_COLORS[i.disposition];
             return (
-              <div key={i.id} className={`flex min-h-[4.5rem] items-center pr-3 ${selected.has(i.id) ? "bg-indigo-50" : ""}`}>
-                <label className="flex w-10 shrink-0 cursor-pointer items-center justify-center self-stretch">
-                  <input type="checkbox" aria-label={`Select ${i.name}`} className="h-5 w-5 accent-indigo-600" checked={selected.has(i.id)} onChange={() => toggle(i.id)} />
-                </label>
-                <button className="flex min-w-0 flex-1 items-center gap-3 py-2.5 text-left" onClick={() => setEditing({ row: i })}>
+              <SwipeRow key={i.id} radius="rounded-none" actions={sel.active ? [] : rowActions(i)}>
+              <div className={`flex min-h-[4.5rem] items-center pr-3 transition-colors ${sel.has(i.id) ? "bg-accent/[0.07]" : "bg-white"} ${sel.active ? "" : "pl-3"}`}>
+                {sel.active && (
+                  <button type="button" role="checkbox" aria-checked={sel.has(i.id)} aria-label={`Select ${i.name}`} className="flex w-11 shrink-0 items-center justify-center self-stretch" onClick={() => sel.toggle(i.id)}>
+                    <SelectCircle on={sel.has(i.id)} />
+                  </button>
+                )}
+                <button className="flex min-w-0 flex-1 items-center gap-3 py-2.5 text-left" onClick={() => tapItem(i)}>
                   {i.photos[0] ? (
                     <MediaThumb media={i.photos[0]} className="pointer-events-none h-12 w-12 shrink-0 rounded-xl border-0" />
                   ) : i.image_url ? (
@@ -319,6 +276,7 @@ export default function InventoryPage() {
                   </span>
                 </div>
               </div>
+              </SwipeRow>
             );
           })}
         </div>
@@ -330,9 +288,9 @@ export default function InventoryPage() {
             const box = db.boxes.find((b) => b.id === i.box_id);
             const r = !roomId ? rooms.find((x) => x.id === i.room_id) : null;
             return (
-              <div key={i.id} className={`card relative flex flex-col overflow-hidden p-0 ${selected.has(i.id) ? "ring-2 ring-indigo-500" : ""}`}>
-                <input type="checkbox" aria-label={`Select ${i.name}`} className="absolute left-2 top-2 z-10 h-5 w-5 accent-indigo-600" checked={selected.has(i.id)} onChange={() => toggle(i.id)} />
-                <button className="flex flex-1 flex-col text-left" onClick={() => setEditing({ row: i })}>
+              <div key={i.id} className={`card relative flex flex-col overflow-hidden p-0 ${sel.has(i.id) ? "ring-2 ring-accent" : ""}`}>
+                {sel.active && <SelectCircle on={sel.has(i.id)} className="pointer-events-none absolute left-2 top-2 z-10" />}
+                <button className="flex flex-1 flex-col text-left" role={sel.active ? "checkbox" : undefined} aria-checked={sel.active ? sel.has(i.id) : undefined} onClick={() => tapItem(i)}>
                   {i.photos[0] ? (
                     <MediaThumb media={i.photos[0]} className="pointer-events-none aspect-square h-auto w-full rounded-none border-0" />
                   ) : i.image_url ? (
@@ -385,6 +343,52 @@ export default function InventoryPage() {
         </Empty>
       )}
 
+      <SelectActions sel={sel}>
+        <div className="grid grid-cols-2 gap-2 text-sm lg:grid-cols-5">
+          <select
+            className="min-h-11 min-w-0 truncate rounded-xl bg-white px-3 font-semibold text-ink"
+            aria-label="Set plan"
+            value=""
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === "car") bulk({ in_car: true, disposition: "move" }, "In our car");
+              else if (v === "movers") bulk({ in_car: false }, "Movers take it");
+              else if (v) bulk({ disposition: v as Item["disposition"] }, optionLabel(DISPOSITIONS, v));
+            }}
+          >
+            <option value="">Plan…</option>
+            {DISPOSITIONS.map((d) => (
+              <option key={d.value} value={d.value}>
+                {d.label}
+              </option>
+            ))}
+            <option value="car">🚗 Coming in our car</option>
+            <option value="movers">🚚 Movers take it</option>
+          </select>
+          <select className="min-h-11 min-w-0 truncate rounded-xl bg-white/15 px-3" aria-label="Move to room" value="" onChange={(e) => e.target.value && bulk({ room_id: e.target.value }, `Moved to ${rooms.find((r) => r.id === e.target.value)?.name ?? "room"}`)}>
+            <option value="">Room…</option>
+            {rooms.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
+            ))}
+          </select>
+          <select className="min-h-11 min-w-0 truncate rounded-xl bg-white/15 px-3" aria-label="Pack in box" value="" onChange={(e) => e.target.value && bulk({ box_id: e.target.value }, "Packed")}>
+            <option value="">Box…</option>
+            {[...db.boxes]
+              .sort((a, b) => a.number - b.number)
+              .map((b) => (
+                <option key={b.id} value={b.id}>
+                  #{b.number} {b.label}
+                </option>
+              ))}
+          </select>
+          <button className="min-h-11 rounded-xl bg-red-600 px-3 font-semibold" onClick={bulkDelete}>
+            🗑 Delete
+          </button>
+        </div>
+      </SelectActions>
+
       <Drawer open={!!editing} onClose={() => setEditing(null)} title={editing?.row ? editing.row.name : "New item"}>
         {editing?.row && <PriceIdea item={editing.row} onUse={(row) => setEditing({ row })} />}
         {editing && (
@@ -393,7 +397,10 @@ export default function InventoryPage() {
             table="items"
             row={editing.row}
             initial={editing.initial}
-            onDone={() => setEditing(null)}
+            onDone={() => {
+              if (editing.row) sel.release([editing.row.id]);
+              setEditing(null);
+            }}
           />
         )}
       </Drawer>

@@ -1,5 +1,6 @@
 "use client";
 
+import { GroupToggle, SelectBar, useSelection } from "@/components/Selection";
 import { buildLabelSheet, DEFAULT_LABEL_OPTIONS, LABEL_SIZES, nextBoxNumber, roomCode, type LabelOptions } from "@moving/shared";
 import { useEffect, useMemo, useState } from "react";
 import { PageHeader, Segmented } from "@/components/ui";
@@ -143,7 +144,6 @@ function QuickCreate({ onCreated }: { onCreated: (ids: string[]) => void }) {
 export default function LabelsPage() {
   const db = useDb();
   const [opts, setOpts] = useState<LabelOptions>(loadOpts);
-  const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [roomFilter, setRoomFilter] = useState<string>("all");
   const [html, setHtml] = useState("");
 
@@ -163,7 +163,8 @@ export default function LabelsPage() {
     [db.rooms, boxes],
   );
   const visible = roomFilter === "all" ? roomsWithBoxes : roomsWithBoxes.filter((r) => r.id === roomFilter);
-  const ids = useMemo(() => boxes.filter((b) => selected.has(b.id)).map((b) => b.id), [boxes, selected]);
+  const sel = useSelection(boxes.map((b) => b.id), { alwaysOn: true });
+  const ids = useMemo(() => boxes.filter((b) => sel.has(b.id)).map((b) => b.id), [boxes, sel]);
 
   useEffect(() => {
     let cancelled = false;
@@ -174,23 +175,6 @@ export default function LabelsPage() {
       cancelled = true;
     };
   }, [db, ids, opts, household]);
-
-  const toggle = (id: string) =>
-    setSelected((s) => {
-      const n = new Set(s);
-      if (n.has(id)) n.delete(id);
-      else n.add(id);
-      return n;
-    });
-  const selectMany = (list: string[], on: boolean) =>
-    setSelected((s) => {
-      const n = new Set(s);
-      for (const id of list) {
-        if (on) n.add(id);
-        else n.delete(id);
-      }
-      return n;
-    });
 
   const size = LABEL_SIZES.find((s) => s.value === opts.size)!;
   const labelCount = ids.length * opts.copies;
@@ -229,33 +213,37 @@ export default function LabelsPage() {
                 </button>
               ))}
             </div>
-            {!boxes.length && <div className="muted">No boxes yet. Quick-create some below.</div>}
+            {!boxes.length ? <div className="muted">No boxes yet. Quick-create some below.</div> : <SelectBar sel={sel} noun="box" sticky={false} className="bg-ink/[0.04]! shadow-none!" />}
             <div className="max-h-[420px] space-y-3 overflow-y-auto pr-1">
               {visible.map((r) => {
                 const roomIds = r.boxes.map((b) => b.id);
-                const all = roomIds.every((id) => selected.has(id));
                 return (
                   <div key={r.id}>
-                    <div className="mb-1 flex items-center justify-between">
+                    <div className="mb-1 flex items-center gap-1">
+                      <GroupToggle sel={sel} ids={roomIds} label={r.name} />
                       <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-500">
                         <span className="h-3 w-3 rounded" style={{ background: r.color }} />
-                        {r.name} · {r.boxes.length}
+                        {r.name} · {roomIds.filter((id) => sel.has(id)).length} of {r.boxes.length}
                       </div>
-                      <button className="text-xs font-semibold text-indigo-600" onClick={() => selectMany(roomIds, !all)}>
-                        {all ? "Clear" : "Select all"}
-                      </button>
                     </div>
                     <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-6 lg:grid-cols-4">
                       {r.boxes.map((b, i) => {
-                        const on = selected.has(b.id);
+                        const on = sel.has(b.id);
                         return (
                           <button
                             key={b.id}
                             title={b.label || `Box ${b.number}`}
-                            onClick={() => toggle(b.id)}
-                            className={`rounded-xl border px-1 py-2 text-center text-xs font-bold transition ${on ? "text-white shadow-md" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"}`}
+                            role="checkbox"
+                            aria-checked={on}
+                            onClick={() => sel.toggle(b.id)}
+                            className={`relative rounded-xl border px-1 py-2 text-center text-xs font-bold transition ${on ? "text-white shadow-md" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"}`}
                             style={on ? { background: r.color, borderColor: r.color } : undefined}
                           >
+                            {on && (
+                              <span aria-hidden className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-white text-[10px] text-ink shadow ring-1 ring-black/10">
+                                ✓
+                              </span>
+                            )}
                             {opts.numbering === "room" ? `${roomCode(r.name)}-${i + 1}` : `#${b.number}`}
                             {(b.fragile || b.open_first) && <div className="text-[10px] font-medium opacity-80">{b.fragile ? "fragile" : "open 1st"}</div>}
                           </button>
@@ -266,16 +254,6 @@ export default function LabelsPage() {
                 );
               })}
             </div>
-            {boxes.length > 0 && (
-              <div className="flex gap-2">
-                <button className="btn-secondary flex-1 py-1.5 text-xs" onClick={() => selectMany(boxes.map((b) => b.id), true)}>
-                  Select every box
-                </button>
-                <button className="btn-ghost flex-1 py-1.5 text-xs" onClick={() => setSelected(new Set())}>
-                  Clear
-                </button>
-              </div>
-            )}
           </div>
 
           <div className="card space-y-3">
@@ -323,7 +301,7 @@ export default function LabelsPage() {
             </div>
           </div>
 
-          <QuickCreate onCreated={(newIds) => selectMany(newIds, true)} />
+          <QuickCreate onCreated={(newIds) => sel.setMany(newIds, true)} />
         </div>
 
         <div className="card flex min-h-[520px] flex-col overflow-hidden p-0 xl:sticky xl:top-4 xl:h-[calc(100vh-2rem)] xl:self-start">

@@ -3,6 +3,7 @@
 import { listHouseholdMembers, MovingStore, personName, type HouseholdMember } from "@moving/shared";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { HiddenSettings } from "@/components/HiddenSettings";
 import { NavPositionPicker } from "@/components/NavPositionPicker";
 import { PageHeader } from "@/components/ui";
 import { idbKV } from "@/lib/kv";
@@ -162,6 +163,8 @@ export default function SettingsPage() {
           </div>
         )}
       </section>
+
+      <HiddenSettings />
 
       <section className="card space-y-3 border-red-200">
         <h2 className="font-bold text-red-700">Danger zone</h2>

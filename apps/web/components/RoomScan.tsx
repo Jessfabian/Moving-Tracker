@@ -1,5 +1,6 @@
 "use client";
 
+import { PickAll, SelectCircle } from "./Selection";
 import {
   DISPOSITION_COLORS,
   ROOM_TYPE_LABELS,
@@ -289,6 +290,12 @@ export function RoomScan({ open, onClose, initialRoomId, onSaved }: { open: bool
             </div>
             {status && <p className="rounded-xl bg-indigo-50 p-3 text-sm text-indigo-900">{status}</p>}
 
+            <PickAll
+              count={rows.filter((r) => r.keep).length}
+              total={rows.length}
+              onAll={() => rows.forEach((r) => !r.keep && patch(r.key, { keep: true }))}
+              onClear={() => rows.forEach((r) => r.keep && patch(r.key, { keep: false }))}
+            />
             <ul className="space-y-2">
               {rows.map((r) => {
                 const idea = ideas.get(r.key)!;
@@ -297,7 +304,9 @@ export function RoomScan({ open, onClose, initialRoomId, onSaved }: { open: bool
                 return (
                   <li key={r.key} className={`rounded-2xl border p-3 ${r.keep ? "border-gray-200 bg-white" : "border-dashed border-gray-200 bg-gray-50 opacity-60"}`}>
                     <div className="flex items-start gap-3">
-                      <input type="checkbox" aria-label={`Include ${r.name}`} className="mt-2 h-5 w-5 flex-none accent-indigo-600" checked={r.keep} onChange={(e) => patch(r.key, { keep: e.target.checked })} />
+                      <button type="button" role="checkbox" aria-checked={r.keep} aria-label={`Include ${r.name}`} className="-m-1.5 flex h-11 w-9 flex-none items-center justify-center" onClick={() => patch(r.key, { keep: !r.keep })}>
+                        <SelectCircle on={r.keep} />
+                      </button>
                       {src?.img && r.crop ? (
                         <div
                           className="h-14 w-14 flex-none rounded-lg bg-gray-100 bg-no-repeat"

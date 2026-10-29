@@ -6,6 +6,7 @@ import { useTwoPane } from "@/lib/hooks";
 import { useDb } from "@/lib/store-context";
 import { EntityForm } from "./EntityForm";
 import { MediaThumb } from "./Media";
+import { SwipeRow, showUndo, useDeleteWithUndo, useHiddenRows, type SwipeAction } from "./Swipe";
 import { Drawer, Empty, PageHeader } from "./ui";
 
 type Row = Record<string, unknown>;
@@ -71,13 +72,21 @@ export function CrudPage<T extends TableName>(props: CrudPageProps<T>) {
   };
 
   const all = db[table] as TableMap[T][];
+  const hiddenRows = useHiddenRows();
+  const del = useDeleteWithUndo();
+  const titleOf = (r: TableMap[T]) => String((r as unknown as Row)[schema.titleField] || schema.singular);
+  const rowActions = (r: TableMap[T]): SwipeAction[] => [
+    { label: "Hide", icon: "🙈", onClick: () => { hiddenRows.hide({ table, id: r.id, label: titleOf(r) }); showUndo(`Hid “${titleOf(r)}” · find it in Settings`, () => hiddenRows.unhide(table, r.id)); } },
+    { label: "Delete", icon: "🗑", tone: "danger", onClick: () => { if (editing === r.id) setEditing(null); del(table, r.id, `“${titleOf(r)}”`); } },
+  ];
+  const hiddenCount = all.filter((r) => hiddenRows.isHidden(table, r.id)).length;
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    let out = all.filter((r) => (where ? where(r) : true));
+    let out = all.filter((r) => (where ? where(r) : true) && !hiddenRows.rows.some((h) => h.table === table && h.id === r.id));
     for (const [k, v] of Object.entries(filter)) if (v) out = out.filter((r) => String((r as unknown as Row)[k] ?? "") === v);
     if (needle) out = out.filter((r) => JSON.stringify(r).toLowerCase().includes(needle));
     return sort ? [...out].sort(sort) : [...out].sort((a, b) => String((a as unknown as Row)[schema.titleField] ?? "").localeCompare(String((b as unknown as Row)[schema.titleField] ?? "")));
-  }, [all, q, filter, where, sort, schema.titleField]);
+  }, [all, q, filter, where, sort, schema.titleField, hiddenRows.rows, table]);
 
   const groups = useMemo(() => {
     if (!groupBy) return [{ key: "", label: "", rows }];
@@ -165,7 +174,9 @@ export function CrudPage<T extends TableName>(props: CrudPageProps<T>) {
           {renderCard ? (
             <div className={`grid gap-4 ${twoPane ? "" : "sm:grid-cols-2"} ${twoPane && !formOpen ? "xl:grid-cols-2" : ""}`}>
               {g.rows.map((r) => (
-                <div key={r.id}>{renderCard(r, () => setEditing(r.id))}</div>
+                <SwipeRow key={r.id} radius="rounded-[1.25rem] lg:rounded-[1.75rem]" actions={rowActions(r)}>
+                  {renderCard(r, () => setEditing(r.id))}
+                </SwipeRow>
               ))}
             </div>
           ) : (
@@ -175,6 +186,7 @@ export function CrudPage<T extends TableName>(props: CrudPageProps<T>) {
               const media = photoKey ? ((row[photoKey] as TableMap["items"]["photos"]) ?? []) : [];
               return (
                 <li key={r.id}>
+                  <SwipeRow actions={rowActions(r)}>
                   <button
                     onClick={() => setEditing(r.id)}
                     className={`group flex w-full items-center gap-4 rounded-2xl border bg-white px-4 py-3.5 text-left transition hover:-translate-y-px hover:shadow-[0_10px_30px_-18px_rgba(13,13,15,0.5)] ${editing === r.id ? "border-ink ring-1 ring-ink" : "border-gray-200/80"}`}
@@ -197,6 +209,7 @@ export function CrudPage<T extends TableName>(props: CrudPageProps<T>) {
                     {renderBadge?.(r)}
                     <span className="hidden text-gray-300 transition group-hover:translate-x-0.5 group-hover:text-ink sm:block">→</span>
                   </button>
+                  </SwipeRow>
                 </li>
               );
             })}
@@ -253,6 +266,11 @@ export function CrudPage<T extends TableName>(props: CrudPageProps<T>) {
         })}
         <span className="self-center text-sm text-gray-500">
           {rows.length} of {all.length}
+          {hiddenCount > 0 && (
+            <a href="/settings#hidden" className="ml-1 text-gray-400 underline">
+              · {hiddenCount} hidden
+            </a>
+          )}
         </span>
         {toolbar}
       </div>

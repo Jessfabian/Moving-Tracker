@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRef, useState } from "react";
 import { EntityForm } from "@/components/EntityForm";
 import { RoomScan } from "@/components/RoomScan";
+import { Card } from "@/components/Swipe";
 import { Scanner } from "@/components/Scanner";
 import { Drawer, PageHeader } from "@/components/ui";
 import { lookupProduct } from "@/lib/lookup";
@@ -96,8 +97,7 @@ export default function ScanPage() {
       <input ref={photoRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => void onPhotos(e.target.files).then(() => (e.target.value = ""))} />
 
       {results.length > 0 && (
-        <section className="mt-6">
-          <h2 className="mb-2 font-bold">This session</h2>
+        <Card id="scan.session" title="This session" className="mt-6" bodyClassName="mt-2">
           <ul className="divide-y divide-gray-100 rounded-2xl border border-gray-200 bg-white">
             {results.map((r) => (
               <li key={r.id} className="flex items-center gap-3 px-4 py-3">
@@ -124,7 +124,7 @@ export default function ScanPage() {
               </li>
             ))}
           </ul>
-        </section>
+        </Card>
       )}
 
       <RoomScan

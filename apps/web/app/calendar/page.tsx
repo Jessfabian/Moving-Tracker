@@ -1,5 +1,6 @@
 "use client";
 
+import { Card } from "@/components/Swipe";
 import { CALENDAR_LEGEND, calendarEvents, formatDate, formatTime, monthGrid, today, toDateString, addDays, type Appointment, type CalendarEvent, type CalendarSource } from "@moving/shared";
 import Link from "next/link";
 import { useMemo, useState } from "react";
@@ -136,9 +137,8 @@ export default function CalendarPage() {
 
       {view === "month" ? (
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-          <section className="card p-3 sm:p-5">
-            <div className="mb-4 flex items-center justify-between gap-2">
-              <h2 className="font-display text-2xl font-bold tracking-tight sm:text-3xl">{monthLabel}</h2>
+          <Card id="calendar.month" title={monthLabel} bodyClassName="mt-4">
+            <div className="mb-4 flex items-center justify-end gap-2">
               <div className="flex gap-1">
                 <button className="btn-ghost px-3" onClick={() => setAnchor(shiftMonth(anchor, -1))} aria-label="Previous month">
                   ←
@@ -198,7 +198,7 @@ export default function CalendarPage() {
                 );
               })}
             </div>
-          </section>
+          </Card>
           <aside className="card self-start xl:sticky xl:top-4">
             <div className="flex items-start justify-between gap-2">
               <div>

@@ -11,8 +11,10 @@ import { BulkEdit } from "./BulkEdit";
 import { Scanner } from "@/components/Scanner";
 import { Drawer, Empty, PageHeader, Segmented } from "@/components/ui";
 import { useDb, useStore } from "@/lib/store-context";
+import { SwipeRow, showUndo, useDeleteWithUndo, useHiddenRows, type SwipeAction } from "@/components/Swipe";
+import { GroupToggle, SelectActions, SelectBar, SelectCircle, useSelection } from "@/components/Selection";
 
-type GroupKey = "genre" | "disposition" | "owner" | "none";
+type GroupKey = "genre" | "author" | "disposition" | "owner" | "none";
 const QUICK = ["move", "sell", "donate", "give"] as const;
 const QUICK_LABEL: Record<string, string> = { move: "Keep", sell: "Sell", donate: "Donate", give: "Give" };
 
@@ -26,17 +28,6 @@ function Cover({ book, className = "h-28 w-20", tiny }: { book: Book; className?
     <div className={`${className} flex flex-none items-center justify-center overflow-hidden rounded bg-gradient-to-br from-amber-100 to-amber-200 p-1 text-center font-semibold break-words text-amber-900 shadow ${tiny ? "text-sm" : "text-[10px]"}`}>
       {tiny ? book.title.charAt(0).toUpperCase() : <span className="line-clamp-5">{book.title.slice(0, 60)}</span>}
     </div>
-  );
-}
-
-function Check({ on, inline }: { on: boolean; inline?: boolean }) {
-  return (
-    <span
-      aria-hidden
-      className={`${inline ? "" : "absolute right-1 top-1"} flex h-6 w-6 flex-none items-center justify-center rounded-full border-2 text-xs font-bold shadow-sm ${on ? "border-ink bg-ink text-lime" : "border-gray-300 bg-white"}`}
-    >
-      {on ? "✓" : ""}
-    </span>
   );
 }
 
@@ -74,14 +65,11 @@ export default function BooksPage() {
   const [disp, setDisp] = useState("");
   const [genre, setGenre] = useState("");
   const [owner, setOwner] = useState("");
+  const [author, setAuthor] = useState("");
   const [q, setQ] = useState("");
   const [tab, setTab] = useState<"library" | "sales">("library");
-  const [selecting, setSelecting] = useState(false);
-  const [picked, setPicked] = useState<string[]>([]);
   const [selling, setSelling] = useState(false);
-  const togglePick = (id: string) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
   const [bulk, setBulk] = useState(false);
-  const openBook = (b: Book) => (selecting ? togglePick(b.id) : setEditing(b));
   const [view, setView] = useLocalState<"cards" | "compact" | "shelf">("books:view", "cards");
 
   // Publish dates arrive in many formats ("May 3, 1999", "1999-05-03") — keep every book on the year only.
@@ -112,28 +100,45 @@ export default function BooksPage() {
     setLog((l) => l.map((e) => (e.code === isbn && e.msg === "Looking up…" ? { code: isbn, msg: info ? info.title : "Not found — tap to add details", id: row.id, ok: !!info } : e)));
   };
 
+  const hiddenRows = useHiddenRows();
+  const del = useDeleteWithUndo();
+  const rowActions = (b: Book): SwipeAction[] => [
+    { label: "Hide", icon: "🙈", onClick: () => { hiddenRows.hide({ table: "books", id: b.id, label: b.title }); showUndo(`Hid “${b.title}” · find it in Settings`, () => hiddenRows.unhide("books", b.id)); } },
+    { label: "Delete", icon: "🗑", tone: "danger", onClick: () => del("books", b.id, `“${b.title}”`) },
+  ];
   const books = useMemo(() => {
     const needle = q.toLowerCase();
+    const hidden = new Set(hiddenRows.rows.filter((h) => h.table === "books").map((h) => h.id));
     return db.books
-      .filter((b) => (!disp || b.disposition === disp) && (!genre || b.genre === genre) && (!owner || b.owner_member_id === owner))
+      .filter((b) => !hidden.has(b.id))
+      .filter((b) => (!disp || b.disposition === disp) && (!genre || b.genre === genre) && (!owner || b.owner_member_id === owner) && (!author || b.authors.includes(author)))
       .filter((b) => !needle || `${b.title} ${b.subtitle} ${b.authors.join(" ")} ${b.isbn} ${b.publisher}`.toLowerCase().includes(needle))
       .sort((a, b) => a.title.localeCompare(b.title));
-  }, [db.books, disp, genre, owner, q]);
+  }, [db.books, disp, genre, owner, author, q, hiddenRows.rows]);
+  const sel = useSelection(books.map((b) => b.id));
+  const selecting = sel.active;
+  const picked = sel.ids;
+  const openBook = (b: Book) => (selecting ? sel.toggle(b.id) : setEditing(b));
+  const authors = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const b of db.books) for (const a of b.authors) if (a.trim()) counts.set(a, (counts.get(a) ?? 0) + 1);
+    return [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  }, [db.books]);
 
   const groups = useMemo(() => {
     if (group === "none") return [{ key: "", label: "", rows: books }];
     const map = new Map<string, Book[]>();
     for (const b of books) {
-      const k = group === "genre" ? b.genre : group === "disposition" ? b.disposition : (b.owner_member_id ?? "");
-      map.set(k, [...(map.get(k) ?? []), b]);
+      const keys = group === "author" ? (b.authors.length ? b.authors.slice(0, 1) : [""]) : [group === "genre" ? b.genre : group === "disposition" ? b.disposition : (b.owner_member_id ?? "")];
+      for (const k of keys) map.set(k, [...(map.get(k) ?? []), b]);
     }
     return [...map.entries()]
       .map(([key, rows]) => ({
         key,
         rows,
-        label: group === "genre" ? optionLabel(BOOK_GENRES, key) || "Uncategorized" : group === "disposition" ? optionLabel(DISPOSITIONS, key) : db.family_members.find((m) => m.id === key)?.name || "Shared / unassigned",
+        label: group === "author" ? key || "Unknown author" : group === "genre" ? optionLabel(BOOK_GENRES, key) || "Uncategorized" : group === "disposition" ? optionLabel(DISPOSITIONS, key) : db.family_members.find((m) => m.id === key)?.name || "Shared / unassigned",
       }))
-      .sort((a, b) => b.rows.length - a.rows.length);
+      .sort((a, b) => (group === "author" ? (a.key ? a.key.localeCompare(b.key) : 1) : b.rows.length - a.rows.length));
   }, [books, group, db.family_members]);
 
   const sellValue = sum(db.books.filter((b) => b.disposition === "sell").map((b) => b.sale_price ?? b.est_value));
@@ -149,16 +154,7 @@ export default function BooksPage() {
         subtitle={`${db.books.length} books · ${db.books.filter((b) => b.disposition === "sell").length} to sell (${formatMoney(sellValue)}) · ${db.books.filter((b) => b.disposition === "donate").length} to donate · ${db.books.filter((b) => b.disposition === "move").length} keeping${moveSize.bookLbs ? ` · ≈ ${moveSize.bookLbs.toLocaleString()} lbs to move (in your mover quote)` : ""}`}
         actions={
           <>
-            <button
-              className={selecting ? "btn-accent" : "btn-secondary"}
-              onClick={() => {
-                setTab("library");
-                setSelecting((s) => !s);
-                setPicked([]);
-              }}
-            >
-              {selecting ? "✕ Done selecting" : "☑︎ Select"}
-            </button>
+            {!selecting && tab === "library" && <SelectBar sel={sel} startLabel="Select" />}
             <button className="btn-secondary" onClick={() => setEditing("new")}>
               + Add manually
             </button>
@@ -262,9 +258,9 @@ export default function BooksPage() {
       )}
 
       <div className="@container mb-4 space-y-2">
-        <div className="grid grid-cols-1 items-center gap-2 @lg:grid-cols-[minmax(0,1fr)_auto_auto_auto]">
+        <div className="grid grid-cols-1 items-center gap-2 @lg:grid-cols-[minmax(0,1fr)_auto_auto_auto_auto]">
           <input className="input w-full min-w-0" type="search" placeholder="Search title, author, ISBN…" value={q} onChange={(e) => setQ(e.target.value)} />
-          <div className="grid min-w-0 grid-cols-3 gap-2 @lg:contents">
+          <div className="grid min-w-0 grid-cols-2 gap-2 @md:grid-cols-4 @lg:contents">
             <select className="ios-popup min-h-9 w-full min-w-0 truncate bg-ink/[0.06] @lg:w-auto" aria-label="Plan" value={disp} onChange={(e) => setDisp(e.target.value)}>
               <option value="">Plan</option>
               {DISPOSITIONS.map((d) => (
@@ -289,15 +285,24 @@ export default function BooksPage() {
                 </option>
               ))}
             </select>
+            <select className="ios-popup min-h-9 w-full min-w-0 truncate bg-ink/[0.06] @lg:w-auto @lg:max-w-56" aria-label="Author" value={author} onChange={(e) => setAuthor(e.target.value)}>
+              <option value="">Author</option>
+              {authors.map(([a, n]) => (
+                <option key={a} value={a}>
+                  {a} ({n})
+                </option>
+              ))}
+            </select>
           </div>
         </div>
         <div className="grid items-center gap-2 @xl:grid-cols-[minmax(0,1fr)_auto]">
         <div className="flex items-center gap-2">
           <span className="hidden text-[13px] text-gray-500 @sm:inline">Group by</span>
-          <div className="grid flex-1 grid-cols-4 gap-0.5 rounded-full bg-ink/[0.06] p-0.5" role="radiogroup" aria-label="Group by">
+          <div className="grid flex-1 grid-cols-5 gap-0.5 rounded-full bg-ink/[0.06] p-0.5" role="radiogroup" aria-label="Group by">
             {(
               [
                 { value: "genre", label: "Genre" },
+                { value: "author", label: "Author" },
                 { value: "disposition", label: "Plan" },
                 { value: "owner", label: "Owner" },
                 { value: "none", label: "A–Z" },
@@ -342,22 +347,26 @@ export default function BooksPage() {
         </div>
       </div>
 
+      {selecting && <SelectBar sel={sel} noun="book" className="mb-3" />}
       {books.length ? (
         <div className="space-y-6">
           {groups.map((g) => (
             <section key={g.key}>
               {g.label && (
-                <h2 className="mb-2 text-sm font-bold uppercase tracking-wide text-gray-500">
-                  {g.label} <span className="font-normal">({g.rows.length})</span>
-                </h2>
+                <div className="mb-2 flex items-center gap-1">
+                  {selecting && <GroupToggle sel={sel} ids={g.rows.map((b) => b.id)} label={g.label} />}
+                  <h2 className="text-sm font-bold uppercase tracking-wide text-gray-500">
+                    {g.label} <span className="font-normal">({g.rows.length})</span>
+                  </h2>
+                </div>
               )}
               {view === "shelf" ? (
                 <div className="grid grid-cols-3 gap-3 @container sm:grid-cols-4 md:grid-cols-6 xl:grid-cols-8">
                   {g.rows.map((b) => (
-                    <button key={b.id} type="button" onClick={() => openBook(b)} className={`relative min-w-0 text-left ${selecting && picked.includes(b.id) ? "rounded-md ring-2 ring-ink ring-offset-2" : ""}`}>
+                    <button key={b.id} type="button" onClick={() => openBook(b)} className={`relative min-w-0 text-left ${sel.has(b.id) ? "rounded-md ring-2 ring-accent ring-offset-2" : ""}`}>
                       <Cover book={b} className="aspect-[2/3] h-auto w-full" />
                       <span className="absolute bottom-1 left-1 h-2.5 w-2.5 rounded-full ring-2 ring-white" style={{ background: DISPOSITION_COLORS[b.disposition] }} title={optionLabel(DISPOSITIONS, b.disposition)} />
-                      {selecting && <Check on={picked.includes(b.id)} />}
+                      {selecting && <SelectCircle on={sel.has(b.id)} className="absolute right-1 top-1" />}
                       <div className="mt-1 line-clamp-2 text-[12px] font-medium leading-tight">{b.title}</div>
                     </button>
                   ))}
@@ -366,8 +375,9 @@ export default function BooksPage() {
                 <ul className="ios-list divide-y divide-gray-200/70">
                   {g.rows.map((b) => (
                     <li key={b.id}>
-                      <button type="button" onClick={() => openBook(b)} className={`flex min-h-14 w-full min-w-0 items-center gap-3 px-3 py-2 text-left ${selecting && picked.includes(b.id) ? "bg-ink/[0.05]" : ""}`}>
-                        {selecting && <Check on={picked.includes(b.id)} inline />}
+                      <SwipeRow radius="rounded-none" actions={selecting ? [] : rowActions(b)}>
+                      <button type="button" onClick={() => openBook(b)} className={`flex min-h-14 w-full min-w-0 items-center gap-3 bg-white px-3 py-2 text-left ${sel.has(b.id) ? "bg-accent/[0.07]!" : ""}`}>
+                        {selecting && <SelectCircle on={sel.has(b.id)} />}
                         <Cover book={b} className="h-12 w-8" tiny />
                         <div className="min-w-0 flex-1">
                           <div className="truncate text-[15px] font-semibold">{b.title}</div>
@@ -377,19 +387,20 @@ export default function BooksPage() {
                           {QUICK_LABEL[b.disposition] ?? optionLabel(DISPOSITIONS, b.disposition)}
                         </span>
                       </button>
+                      </SwipeRow>
                     </li>
                   ))}
                 </ul>
               ) : (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {g.rows.map((b) => {
-                  const on = picked.includes(b.id);
+                  const on = sel.has(b.id);
                   const sold = b.sale_status === "sold" || b.sale_status === "pending";
                   return (
-                  <div key={b.id} className={`card relative flex flex-col gap-3 p-3 ${selecting && on ? "ring-2 ring-ink" : ""}`}>
+                  <div key={b.id} className={`card relative flex flex-col gap-3 p-3 ${on ? "ring-2 ring-accent" : ""}`}>
                     {selecting && (
-                      <button type="button" aria-label={on ? "Unselect" : "Select"} onClick={() => togglePick(b.id)} className="absolute right-2 top-2 z-10">
-                        <Check on={on} inline />
+                      <button type="button" aria-label={on ? "Unselect" : "Select"} onClick={() => sel.toggle(b.id)} className="absolute right-1 top-1 z-10 flex h-11 w-11 items-center justify-center">
+                        <SelectCircle on={on} />
                       </button>
                     )}
                     <div className="flex min-w-0 gap-3">
@@ -428,48 +439,61 @@ export default function BooksPage() {
       </>
       )}
 
-      {selecting && tab === "library" && (
-        <div className="sticky bottom-20 z-30 mt-6 space-y-2 rounded-3xl bg-ink p-3 text-white shadow-2xl lg:bottom-4">
-          <div className="flex items-center gap-2 px-2 text-sm">
-            <div className="min-w-0 flex-1 truncate">
-              <b>{picked.length}</b> selected
-              {sellable.length > 0 && <span className="text-white/70"> · asking {formatMoney(sum(sellable.map(bookAskPrice)))}</span>}
-            </div>
-            <button type="button" className="seg-btn min-h-9 rounded-full px-3 text-[13px] font-semibold text-white/90" onClick={() => setPicked(picked.length === books.length ? [] : books.map((b) => b.id))}>
-              {picked.length === books.length && books.length ? "None" : `All ${books.length}`}
-            </button>
-          </div>
+      {tab === "library" && (
+        <SelectActions sel={sel} noun="book" summary={sellable.length > 0 && <span className="text-white/70"> · asking {formatMoney(sum(sellable.map(bookAskPrice)))}</span>}>
           <div className="grid grid-cols-2 gap-2">
-            <button className="btn-primary !bg-white !text-ink" disabled={!picked.length} onClick={() => setBulk(true)}>
+            <button className="btn-primary !bg-white !text-ink" onClick={() => setBulk(true)}>
               ✏️ Edit {picked.length || ""}
             </button>
             <button className="btn-accent" disabled={!sellable.length} onClick={() => setSelling(true)}>
               💲 Sell {sellable.length || ""}
             </button>
           </div>
-        </div>
+        </SelectActions>
       )}
       <Drawer open={bulk} onClose={() => setBulk(false)} title={`Edit ${picked.length} book${picked.length === 1 ? "" : "s"}`}>
-        {bulk && <BulkEdit ids={picked} onDone={() => setBulk(false)} />}
+        {bulk && (
+          <BulkEdit
+            ids={picked}
+            onDone={(saved) => {
+              setBulk(false);
+              if (saved) {
+                showUndo(`✓ Updated ${picked.length} book${picked.length === 1 ? "" : "s"}`);
+                sel.release(picked);
+              }
+            }}
+          />
+        )}
       </Drawer>
       <SellDrawer
         open={selling}
         books={sellable}
         onClose={() => {
           setSelling(false);
-          const left = picked.filter((id) => {
-            const b = db.books.find((x) => x.id === id);
-            return b && b.sale_status !== "sold" && b.sale_status !== "pending";
-          });
-          setPicked(left);
-          if (!left.length) setSelecting(false);
+          sel.release(
+            picked.filter((id) => {
+              const b = db.books.find((x) => x.id === id);
+              return !b || b.sale_status === "sold" || b.sale_status === "pending";
+            }),
+          );
         }}
         onSold={() => undefined}
       />
 
       <Scanner open={scan} onClose={() => setScan(false)} onScan={(c) => void onScan(c)} continuous title="Scan book barcodes" hint="Scan the ISBN barcode on each back cover. Keep going — each book is added automatically." />
       <Drawer open={!!editing} onClose={() => setEditing(null)} title={current ? current.title : "Add book"}>
-        {editing && <EntityForm key={current?.id ?? "new"} table="books" row={current} initial={defaults} onDone={() => setEditing(null)} />}
+        {editing && (
+          <EntityForm
+            key={current?.id ?? "new"}
+            table="books"
+            row={current}
+            initial={defaults}
+            onDone={() => {
+              if (current) sel.release([current.id]);
+              setEditing(null);
+            }}
+          />
+        )}
       </Drawer>
     </div>
   );

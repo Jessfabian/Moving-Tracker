@@ -88,7 +88,7 @@ function BulkLivePrices({ ids }: { ids: string[] }) {
 }
 
 /** Change plan, genre, author… on many books at once. Blank / "No change" fields are left alone. */
-export function BulkEdit({ ids, onDone }: { ids: string[]; onDone: () => void }) {
+export function BulkEdit({ ids, onDone }: { ids: string[]; onDone: (saved: boolean) => void }) {
   const db = useDb();
   const store = useStore();
   const [p, setP] = useState<Record<string, string>>({});
@@ -109,7 +109,7 @@ export function BulkEdit({ ids, onDone }: { ids: string[]; onDone: () => void })
 
   const apply = () => {
     for (const id of ids) store.update("books", id, patch);
-    onDone();
+    onDone(true);
   };
 
   const keepOpt = <option value={KEEP}>No change</option>;
@@ -208,7 +208,7 @@ export function BulkEdit({ ids, onDone }: { ids: string[]; onDone: () => void })
       </div>
       <BulkLivePrices ids={ids} />
       <div className="sheet-footer flex gap-2">
-        <button type="button" className="btn-secondary flex-1" onClick={onDone}>
+        <button type="button" className="btn-secondary flex-1" onClick={() => onDone(false)}>
           Cancel
         </button>
         <button type="button" className="btn-primary flex-1" disabled={!changes} onClick={apply}>

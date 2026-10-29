@@ -14,6 +14,7 @@ import {
 import { printHtml } from "@/lib/media";
 import Link from "next/link";
 import { useSupplies } from "@/components/PackingSupplies";
+import { Card } from "@/components/Swipe";
 import { InstantQuoteCard } from "./InstantQuote";
 import { QuoteEmail, useEmailPrefs } from "./QuoteEmail";
 import { useDb, useStore } from "@/lib/store-context";
@@ -126,9 +127,8 @@ export function QuoteKit({ onCompare }: { onCompare: () => void }) {
   return (
     <div className="space-y-5">
       <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
-        <div className="card-ink p-6">
-          <div className="eyebrow text-white/50">How big is this move?</div>
-          <div className="mt-3 flex flex-wrap items-end gap-x-6 gap-y-2">
+        <Card id="quotes.size" title="How big is this move?" tone="card-ink" bodyClassName="mt-2" summary={`${size.weightLbs.toLocaleString()} lbs`}>
+          <div className="flex flex-wrap items-end gap-x-6 gap-y-2">
             <div>
               <div className="font-display text-5xl leading-none font-extrabold tracking-[-0.05em] text-lime">{size.weightLbs.toLocaleString()} lbs</div>
               <div className="mt-1 text-sm text-white/60">
@@ -185,14 +185,18 @@ export function QuoteKit({ onCompare }: { onCompare: () => void }) {
               ))}
             </div>
           )}
-        </div>
-        <div className="card">
-          <div className="flex items-center justify-between">
-            <h2 className="font-display text-xl font-bold tracking-tight">By room</h2>
+        </Card>
+        <Card
+          id="quotes.rooms"
+          title="By room"
+          bodyClassName="mt-1"
+          summary={size.byRoom.length ? `${size.byRoom.length} rooms` : undefined}
+          right={
             <a className="text-xs text-indigo-700 underline" href="/inventory">
               Inventory →
             </a>
-          </div>
+          }
+        >
           {size.byRoom.length ? (
             <table className="mt-3 w-full text-sm">
               <thead>
@@ -217,16 +221,13 @@ export function QuoteKit({ onCompare }: { onCompare: () => void }) {
           ) : (
             <p className="mt-3 text-sm text-gray-500">Log rooms, items and boxes in the inventory for a room-by-room breakdown movers can price.</p>
           )}
-        </div>
+        </Card>
       </div>
 
       <InstantQuoteCard size={size} estimates={estimates} />
 
-      <div>
-        <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="font-display text-xl font-bold tracking-tight">What it should cost</h2>
-          <span className="text-xs text-gray-500">{miles ? `${miles.toLocaleString()} driving miles · planning ballparks, not quotes` : "Add both ZIP codes on the move to size the distance"}</span>
-        </div>
+      <Card id="quotes.cost" title="What it should cost" tone="plain" bodyClassName="mt-1" summary={estimates.length ? `${formatMoney(Math.min(...estimates.map((e) => e.low)))}+` : undefined}>
+        <p className="mb-2 text-xs text-gray-500">{miles ? `${miles.toLocaleString()} driving miles · planning ballparks, not quotes` : "Add both ZIP codes on the move to size the distance"}</p>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {estimates.map((e) => (
             <div key={e.method} className={`card ${preferred === e.method ? "ring-2 ring-ink" : ""}`}>
@@ -249,17 +250,24 @@ export function QuoteKit({ onCompare }: { onCompare: () => void }) {
             </div>
           ))}
         </div>
-      </div>
+      </Card>
 
       <QuoteEmail size={size} prefs={prefs} setPrefs={setPrefs} onPrint={(request, items) => printHtml(packetHtml(db, size, estimates, request, items))} />
 
-      <div>
-        <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="font-display text-xl font-bold tracking-tight">Who to ask</h2>
-          <a className="text-xs text-indigo-700 underline" href="https://ai.fmcsa.dot.gov/hhg/search.asp" target="_blank" rel="noreferrer">
+      <Card
+        id="quotes.who"
+        title="Who to ask"
+        tone="plain"
+        bodyClassName="mt-1"
+        right={
+          <a className="hidden text-xs text-indigo-700 underline sm:inline" href="https://ai.fmcsa.dot.gov/hhg/search.asp" target="_blank" rel="noreferrer">
             Search all FMCSA-registered movers ↗
           </a>
-        </div>
+        }
+      >
+        <a className="mb-2 inline-block text-xs text-indigo-700 underline sm:hidden" href="https://ai.fmcsa.dot.gov/hhg/search.asp" target="_blank" rel="noreferrer">
+          Search all FMCSA-registered movers ↗
+        </a>
         <div className="grid gap-3 md:grid-cols-2">
           {kinds.map((k) => (
             <div key={k} className="card">
@@ -296,7 +304,7 @@ export function QuoteKit({ onCompare }: { onCompare: () => void }) {
             </div>
           ))}
         </div>
-      </div>
+      </Card>
 
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-lime/50 p-4 text-sm">
         <span>

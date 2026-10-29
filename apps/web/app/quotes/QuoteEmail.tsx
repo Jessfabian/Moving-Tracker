@@ -21,6 +21,7 @@ import {
 } from "@moving/shared";
 import { useMemo, useState, useSyncExternalStore } from "react";
 import { download } from "@/lib/media";
+import { Card } from "@/components/Swipe";
 import { buildInventoryPdf, type InventoryPdfRoom, type InventoryPdfRow } from "@/lib/inventoryPdf";
 import { useApp, useDb, useStore } from "@/lib/store-context";
 
@@ -321,13 +322,16 @@ export function QuoteEmail({ size, prefs, setPrefs, onPrint }: { size: MoveSize;
   const canShareFiles = typeof navigator !== "undefined" && "canShare" in navigator;
 
   return (
-    <div className="card">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-display text-xl font-bold tracking-tight">Quote request email</h2>
+    <Card
+      id="quotes.email"
+      title="Quote request email"
+      bodyClassName="mt-0"
+      right={
         <button className="text-xs text-indigo-700 underline" onClick={() => confirm("Reset the email to the default wording and choices?") && setPrefs(null)}>
-          Reset to defaults
+          Reset
         </button>
-      </div>
+      }
+    >
       <p className="mt-1 text-xs text-gray-500">
         Tick what goes in the email. From {contact.name ?? "you"}
         {contact.email ? ` · ${contact.email}` : " — add your email to Family (self) to sign it"}
@@ -525,7 +529,7 @@ export function QuoteEmail({ size, prefs, setPrefs, onPrint }: { size: MoveSize;
           <pre className="mt-2 max-h-[32rem] overflow-auto rounded-xl bg-ink/[0.03] p-3 font-sans text-sm leading-relaxed break-words whitespace-pre-wrap">{request.body}</pre>
         </div>
       </div>
-    </div>
+    </Card>
   );
 }
 

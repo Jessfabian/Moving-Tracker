@@ -7,23 +7,28 @@ import {
   INCOME_KINDS,
   INCOME_STATUSES,
   apartmentCosts,
+  billDue,
   cashflow,
   formatDate,
   formatMoney,
   incomeMonthly,
+  markBillPaid,
   maxAffordableRent,
   monthlyAmount,
   optionLabel,
+  subscriptionSummary,
   today,
-  upcomingBills,
   type Bill,
   type Income,
   type Phase,
 } from "@moving/shared";
+import Link from "next/link";
 import { useState } from "react";
 import { EntityForm } from "@/components/EntityForm";
+import { MoneyImport } from "@/components/MoneyImport";
+import { Card, SwipeRow, showUndo, useDeleteWithUndo, useHiddenRows } from "@/components/Swipe";
 import { Drawer } from "@/components/ui";
-import { useDb } from "@/lib/store-context";
+import { useDb, useStore } from "@/lib/store-context";
 
 const CAT_COLORS: Record<string, string> = {
   housing: "#ff5a1f",
@@ -77,19 +82,47 @@ function Flow({ phase, active, onClick }: { phase: Phase; active: boolean; onCli
 
 export default function BillsPage() {
   const db = useDb();
+  const store = useStore();
+  const hiddenRows = useHiddenRows();
+  const del = useDeleteWithUndo();
   const [phase, setPhase] = useState<Phase>("after");
   const [tab, setTab] = useState<"bills" | "income">("bills");
   const [editing, setEditing] = useState<Editing>(null);
+  const [importing, setImporting] = useState(false);
+  const t = today();
   const flow = cashflow(db, phase);
   const now = cashflow(db, "now");
   const after = cashflow(db, "after");
-  const due = upcomingBills(db.bills, today(), "now", 31);
+  const subs = subscriptionSummary(db.subscriptions ?? []);
+  const due = db.bills
+    .filter((b) => b.status !== "new_after_move" && !hiddenRows.isHidden("bills", b.id))
+    .map((b) => ({ bill: b, d: billDue(b, t) }))
+    .filter((x): x is { bill: Bill; d: NonNullable<ReturnType<typeof billDue>> } => !!x.d && x.d.daysAway <= 31)
+    .sort((a, b) => a.d.daysAway - b.d.daysAway);
+  const overdue = due.filter((x) => x.d.overdue);
   const maxRent = maxAffordableRent(db);
   const signed = db.apartments.find((a) => a.status === "signed");
-  const bills = [...db.bills].sort((a, b) => monthlyAmount(b.amount, b.frequency) - monthlyAmount(a.amount, a.frequency));
-  const incomes = [...db.incomes].sort((a, b) => incomeMonthly(b).net - incomeMonthly(a).net);
+  const bills = db.bills.filter((b) => !hiddenRows.isHidden("bills", b.id)).sort((a, b) => monthlyAmount(b.amount, b.frequency) - monthlyAmount(a.amount, a.frequency));
+  const incomes = db.incomes.filter((i) => !hiddenRows.isHidden("incomes", i.id)).sort((a, b) => incomeMonthly(b).net - incomeMonthly(a).net);
   const delta = after.leftover - now.leftover;
   const memberName = (id: string | null) => db.family_members.find((m) => m.id === id)?.name;
+  const pay = (b: Bill) => {
+    const before = { last_paid: b.last_paid ?? null, next_due: b.next_due ?? null };
+    store.update("bills", b.id, markBillPaid(b, t));
+    showUndo(`${b.name} marked paid`, () => store.update("bills", b.id, before, { silent: true }));
+  };
+  const rowActions = (table: "bills" | "incomes", id: string, label: string) => [
+    {
+      label: "Hide",
+      icon: "🙈",
+      onClick: () => {
+        hiddenRows.hide({ table, id, label });
+        showUndo(`Hid “${label}” · find it in Settings`, () => hiddenRows.unhide(table, id));
+      },
+    },
+    { label: "Delete", icon: "🗑", tone: "danger" as const, onClick: () => del(table, id, `“${label}”`) },
+  ];
+  const dueLabel = (d: { daysAway: number; overdue: boolean }) => (d.overdue ? `${-d.daysAway}d overdue` : d.daysAway === 0 ? "due today" : d.daysAway === 1 ? "due tomorrow" : `in ${d.daysAway}d`);
 
   return (
     <div className="space-y-6">
@@ -102,6 +135,9 @@ export default function BillsPage() {
           <p className="muted mt-3 max-w-2xl">Put in what comes in and what goes out — today and after the move — to see what&apos;s left, what to cancel or transfer, and how much rent you can afford.</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <button className="btn-secondary" onClick={() => setImporting(true)}>
+            ✉️ Import
+          </button>
           <button className="btn-secondary" onClick={() => setEditing({ table: "incomes", row: null })}>
             + Income
           </button>
@@ -153,20 +189,47 @@ export default function BillsPage() {
           {tab === "bills" ? (
             bills.length ? (
               <ul className="space-y-2">
+                {subs.count > 0 && (
+                  <li>
+                    <Link href="/subscriptions" className="flex w-full items-center gap-3 rounded-2xl border border-dashed border-gray-300 p-3 text-left transition hover:shadow-md">
+                      <span className="flex h-10 w-10 flex-none items-center justify-center rounded-xl text-lg text-white" style={{ background: CAT_COLORS.subscriptions }}>
+                        🔁
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-semibold">Subscriptions</span>
+                        <span className="block truncate text-xs text-gray-500">
+                          {subs.count} active{subs.toConfirm ? ` · ${subs.toConfirm} to confirm` : ""} · {formatMoney(subs.yearly)}/yr
+                        </span>
+                      </span>
+                      <span className="text-right">
+                        <b className="block font-display">{formatMoney(subs.monthly)}</b>
+                        <span className="text-[11px] text-gray-400">/mo ›</span>
+                      </span>
+                    </Link>
+                  </li>
+                )}
                 {bills.map((b) => {
                   const m = monthlyAmount(b.amount, b.frequency);
+                  const d = billDue(b, t);
+                  const soon = !!d && (d.overdue || d.daysAway <= 7);
                   return (
                     <li key={b.id}>
-                      <button onClick={() => setEditing({ table: "bills", row: b })} className="flex w-full items-center gap-3 rounded-2xl border border-gray-200/80 p-3 text-left transition hover:shadow-md">
+                      <SwipeRow actions={rowActions("bills", b.id, b.name)}>
+                      <div className={`flex w-full items-center gap-2 rounded-2xl border bg-white p-3 transition hover:shadow-md ${d?.overdue ? "border-red-300" : "border-gray-200/80"}`}>
+                      <button onClick={() => setEditing({ table: "bills", row: b })} className="flex min-w-0 flex-1 items-center gap-3 text-left">
                         <span className="flex h-10 w-10 flex-none items-center justify-center rounded-xl font-display font-bold text-white" style={{ background: CAT_COLORS[b.category] ?? "#78716c" }}>
                           {b.name.slice(0, 1).toUpperCase() || "?"}
                         </span>
                         <span className="min-w-0 flex-1">
-                          <span className="block truncate font-semibold">{b.name}</span>
+                          <span className="flex items-center gap-1.5">
+                            <span className="truncate font-semibold">{b.name}</span>
+                            {d && soon && <span className={`chip shrink-0 ${d.overdue ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-800"}`}>{dueLabel(d)}</span>}
+                          </span>
                           <span className="block truncate text-xs text-gray-500">
                             {optionLabel(BILL_CATEGORIES, b.category)}
-                            {b.due_day ? ` · due the ${b.due_day}${["th", "st", "nd", "rd"][b.due_day % 10 > 3 || [11, 12, 13].includes(b.due_day) ? 0 : b.due_day % 10]}` : ""}
+                            {d ? ` · due ${formatDate(d.date, { month: "short", day: "numeric" })}` : ""}
                             {b.autopay ? " · autopay" : ""}
+                            {b.account ? ` · ${b.account}` : ""}
                             {memberName(b.payer_id) ? ` · ${memberName(b.payer_id)}` : ""}
                           </span>
                         </span>
@@ -176,6 +239,13 @@ export default function BillsPage() {
                           <span className="text-[11px] text-gray-400">{b.frequency === "monthly" ? "/mo" : `${formatMoney(b.amount)} ${optionLabel(FREQUENCIES, b.frequency).toLowerCase()}`}</span>
                         </span>
                       </button>
+                      {d && soon && !b.autopay && (
+                        <button type="button" className="min-h-10 shrink-0 rounded-xl bg-ink px-3 text-xs font-semibold text-white active:opacity-70" onClick={() => pay(b)}>
+                          Paid
+                        </button>
+                      )}
+                      </div>
+                      </SwipeRow>
                     </li>
                   );
                 })}
@@ -195,7 +265,8 @@ export default function BillsPage() {
                 const m = incomeMonthly(i);
                 return (
                   <li key={i.id}>
-                    <button onClick={() => setEditing({ table: "incomes", row: i })} className="flex w-full items-center gap-3 rounded-2xl border border-gray-200/80 p-3 text-left transition hover:shadow-md">
+                    <SwipeRow actions={rowActions("incomes", i.id, i.source)}>
+                    <button onClick={() => setEditing({ table: "incomes", row: i })} className="flex w-full items-center gap-3 rounded-2xl border border-gray-200/80 bg-white p-3 text-left transition hover:shadow-md">
                       <span className="flex h-10 w-10 flex-none items-center justify-center rounded-xl bg-sage font-display font-bold">$</span>
                       <span className="min-w-0 flex-1">
                         <span className="block truncate font-semibold">{i.source}</span>
@@ -210,6 +281,7 @@ export default function BillsPage() {
                         <span className="text-[11px] text-gray-400">/mo take-home</span>
                       </span>
                     </button>
+                    </SwipeRow>
                   </li>
                 );
               })}
@@ -226,11 +298,38 @@ export default function BillsPage() {
         </section>
 
         <aside className="space-y-4">
-          <div className="card">
-            <div className="eyebrow">Where it goes · {phase === "now" ? "today" : "after"}</div>
+          <Card id="bills.due" title="Due in the next 30 days" icon="📅" summary={overdue.length ? `${overdue.length} overdue` : due.length ? `${due.length} bills` : undefined}>
+            {due.length ? (
+              <ul className="space-y-2">
+                {due.slice(0, 10).map(({ bill, d }) => (
+                  <li key={bill.id} className="flex items-center gap-3">
+                    <span className={`flex h-11 w-11 flex-none flex-col items-center justify-center rounded-xl ${d.overdue ? "bg-red-100 text-red-700" : "bg-gray-100"}`}>
+                      <span className="text-[9px] uppercase opacity-70">{formatDate(d.date, { month: "short" })}</span>
+                      <span className="font-display text-lg leading-none font-bold">{Number(d.date.slice(8))}</span>
+                    </span>
+                    <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setEditing({ table: "bills", row: bill })}>
+                      <span className="block truncate text-sm font-semibold">{bill.name}</span>
+                      <span className={`block text-xs ${d.overdue ? "font-semibold text-red-600" : d.daysAway <= 3 ? "font-semibold text-accent" : "text-gray-400"}`}>
+                        {formatMoney(bill.amount)} · {dueLabel(d)}
+                        {bill.autopay ? " · autopay" : ""}
+                      </span>
+                    </button>
+                    {!bill.autopay && (
+                      <button type="button" className="min-h-10 shrink-0 rounded-xl bg-ink/5 px-3 text-xs font-semibold active:opacity-60" onClick={() => pay(bill)}>
+                        Paid ✓
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-gray-400">Add a due date to bills to see them here and on the calendar. “Paid ✓” moves each one to its next due date.</p>
+            )}
+          </Card>
+          <Card id="bills.split" title={`Where it goes · ${phase === "now" ? "today" : "after"}`} icon="📊" summary={`${formatMoney(flow.bills)}/mo`}>
             {flow.byCategory.length ? (
               <>
-                <div className="mt-3 flex h-4 overflow-hidden rounded-full">
+                <div className="flex h-4 overflow-hidden rounded-full">
                   {flow.byCategory.map((c) => (
                     <div key={c.category} title={c.category} style={{ width: `${(c.monthly / flow.bills) * 100}%`, background: CAT_COLORS[c.category] ?? "#78716c" }} />
                   ))}
@@ -239,7 +338,7 @@ export default function BillsPage() {
                   {flow.byCategory.map((c) => (
                     <li key={c.category} className="flex items-center gap-2">
                       <span className="h-2.5 w-2.5 rounded-full" style={{ background: CAT_COLORS[c.category] ?? "#78716c" }} />
-                      <span className="flex-1 truncate">{optionLabel(BILL_CATEGORIES, c.category)}</span>
+                      <span className="flex-1 truncate">{c.category === "subscriptions" ? <Link href="/subscriptions" className="underline">Subscriptions</Link> : optionLabel(BILL_CATEGORIES, c.category)}</span>
                       <b>{formatMoney(c.monthly)}</b>
                       <span className="w-10 text-right text-xs text-gray-400">{Math.round((c.monthly / flow.bills) * 100)}%</span>
                     </li>
@@ -247,40 +346,26 @@ export default function BillsPage() {
                 </ul>
               </>
             ) : (
-              <p className="mt-3 text-sm text-gray-400">Your spending breakdown appears here.</p>
+              <p className="text-sm text-gray-400">Your spending breakdown appears here.</p>
             )}
-          </div>
-          <div className="card">
-            <div className="eyebrow">Due in the next 30 days</div>
-            {due.length ? (
-              <ul className="mt-3 space-y-2">
-                {due.slice(0, 8).map((d) => (
-                  <li key={d.bill.id} className="flex items-center gap-3">
-                    <span className="flex h-11 w-11 flex-none flex-col items-center justify-center rounded-xl bg-gray-100">
-                      <span className="text-[9px] text-gray-500 uppercase">{formatDate(d.date, { month: "short" })}</span>
-                      <span className="font-display text-lg leading-none font-bold">{Number(d.date.slice(8))}</span>
-                    </span>
-                    <span className="min-w-0 flex-1 truncate text-sm font-semibold">{d.bill.name}</span>
-                    <span className="text-right text-xs">
-                      <b className="block text-sm">{formatMoney(d.bill.amount)}</b>
-                      <span className={d.daysAway <= 3 ? "font-semibold text-accent" : "text-gray-400"}>{d.daysAway === 0 ? "today" : `in ${d.daysAway}d`}</span>
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="mt-3 text-sm text-gray-400">Add a due day to monthly bills to see them here and on the calendar.</p>
-            )}
-          </div>
-          <div className="card-ink">
-            <div className="eyebrow text-white/50">Moving checklist for bills</div>
-            <ul className="mt-3 space-y-2 text-sm text-white/80">
+          </Card>
+          <Card id="bills.moving" title="Moving checklist for bills" tone="card-ink">
+            <ul className="space-y-2 text-sm text-white/80">
               <li>• {db.bills.filter((b) => b.status === "cancel_before_move").length} to cancel before you leave</li>
               <li>• {db.bills.filter((b) => b.status === "transfer").length} to transfer to the new address</li>
               <li>• {db.bills.filter((b) => b.status === "new_after_move").length} new bills to set up after</li>
               <li>• {db.bills.filter((b) => b.autopay).length} on autopay — update the billing address</li>
+              {subs.count > 0 && (
+                <li>
+                  •{" "}
+                  <Link href="/subscriptions" className="underline">
+                    {subs.count} subscriptions
+                  </Link>{" "}
+                  — update the card/address, cancel local ones (gym!)
+                </li>
+              )}
             </ul>
-          </div>
+          </Card>
         </aside>
       </div>
 
@@ -288,6 +373,7 @@ export default function BillsPage() {
         {editing?.table === "bills" && <EntityForm key={editing.row?.id ?? "new-bill"} table="bills" row={editing.row} onDone={() => setEditing(null)} />}
         {editing?.table === "incomes" && <EntityForm key={editing.row?.id ?? "new-income"} table="incomes" row={editing.row} onDone={() => setEditing(null)} />}
       </Drawer>
+      <MoneyImport open={importing} onClose={() => setImporting(false)} focus="bills" />
     </div>
   );
 }

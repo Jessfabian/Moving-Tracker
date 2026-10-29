@@ -1,5 +1,6 @@
 "use client";
 
+import { Card } from "@/components/Swipe";
 import {
   EXPENSE_CATEGORIES,
   FUND_KINDS,
@@ -219,13 +220,7 @@ function Funding() {
             </div>
           )}
         </div>
-        <div className="card">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="font-display text-xl font-bold tracking-tight">Funding sources</h2>
-            <button className="btn-primary" onClick={() => setEditing({ kind: "savings" })}>
-              + Add funds
-            </button>
-          </div>
+        <Card id="budget.funding" title="Funding sources" right={<button className="btn-primary" onClick={() => setEditing({ kind: "savings" })}>+ Add funds</button>}>
           <p className="mt-1 text-xs text-gray-500">Where the moving money comes from. Tap a quick-add, then attach the PDF paperwork.</p>
           <div className="mt-3 flex flex-wrap gap-1.5">
             {QUICK_FUNDS.map((q) => (
@@ -266,7 +261,7 @@ function Funding() {
               );
             })}
           </ul>
-        </div>
+        </Card>
       </div>
       <SalesTowardMove />
       <Drawer open={!!editing} onClose={() => setEditing(null)} title={editingRow ? editingRow.source : "Add funding source"}>
@@ -358,8 +353,7 @@ function Summary() {
         </p>
       )}
       {byCat.length > 0 && (
-        <div className="card">
-          <h2 className="mb-3 font-bold">By category</h2>
+        <Card id="budget.categories" title="By category" bodyClassName="mt-3">
           <div className="space-y-2">
             {byCat.map((c) => (
               <div key={c.value} className="grid grid-cols-[8rem_1fr_auto] items-center gap-3 text-sm sm:grid-cols-[12rem_1fr_auto]">
@@ -375,7 +369,7 @@ function Summary() {
             ))}
           </div>
           <p className="mt-2 text-xs text-gray-400">Grey = budgeted, colour = actual. Moving expenses may be tax-deductible for some (e.g. active-duty military) — keep receipts.</p>
-        </div>
+        </Card>
       )}
     </div>
   );

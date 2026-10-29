@@ -10,6 +10,7 @@ import { CloudGate } from "./CloudGate";
 import { useSyncMoveDistance } from "./MoveDistance";
 import { MoreSheet } from "./MoreSheet";
 import { NamePrompt, PullToRefresh, SyncToaster } from "./SyncFeedback";
+import { UndoToast } from "./Swipe";
 
 function SyncBadge({ dark }: { dark?: boolean }) {
   const status = useSyncStatus();
@@ -130,6 +131,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     <CloudGate>
       <DistanceSync />
       <SyncToaster />
+      <UndoToast />
       <PullToRefresh />
       <div className="flex min-h-screen">
         <aside className="sticky top-0 hidden h-screen w-[16.5rem] flex-none flex-col gap-6 overflow-y-auto bg-ink px-4 py-5 text-white lg:flex [&>*]:flex-none">

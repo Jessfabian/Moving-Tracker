@@ -194,6 +194,28 @@ export class MovingStore {
     this.emit();
   }
 
+  /** Brings back a deleted row (undo / "Recently deleted"). */
+  restore<T extends TableName>(table: T, id: string): TableMap[T] | undefined {
+    const row = (this.db[table] as TableMap[T][]).find((r) => r.id === id);
+    if (!row) return undefined;
+    const back = { ...row, deleted: false, updated_at: nowIso(), updated_by: this.actor() } as TableMap[T];
+    this.write(table, back);
+    this.log(table, back, 'updated');
+    this.emit();
+    return back;
+  }
+
+  /** Rows deleted in the last `days` days, newest first. */
+  recentlyDeleted(days = 30): { table: TableName; row: BaseRow }[] {
+    const since = Date.now() - days * 86400000;
+    const out: { table: TableName; row: BaseRow }[] = [];
+    for (const t of TABLES) {
+      if (t === 'activity') continue;
+      for (const r of this.db[t] as BaseRow[]) if (r.deleted && Date.parse(r.updated_at) >= since) out.push({ table: t, row: r });
+    }
+    return out.sort((a, b) => b.row.updated_at.localeCompare(a.row.updated_at));
+  }
+
   /** Replaces all data (used by backup import). */
   importSnapshot(data: Partial<Snapshot>) {
     for (const t of TABLES) {

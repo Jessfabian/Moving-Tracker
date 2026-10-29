@@ -3,6 +3,7 @@
 import { applyPlan, isInterstate, isLongDistance } from "@moving/shared";
 import { useState } from "react";
 import { EntityForm } from "@/components/EntityForm";
+import { Card } from "@/components/Swipe";
 import { formatDrive, useZipRoute } from "@/components/MoveDistance";
 import { PageHeader } from "@/components/ui";
 import { useDb, useStore } from "@/lib/store-context";
@@ -56,8 +57,7 @@ export default function MovePage() {
           </a>
         )}
         {isInterstate(move) && (
-          <div className="card border-amber-200 bg-amber-50">
-            <div className="font-bold">⚖️ Interstate move</div>
+          <Card id="move.interstate" title="Interstate move" bodyClassName="mt-2">
             <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-amber-900">
               <li>Movers must have a USDOT number — verify at FMCSA before booking.</li>
               <li>You should receive the “Your Rights and Responsibilities When You Move” booklet.</li>
@@ -67,18 +67,17 @@ export default function MovePage() {
             <a className="mt-2 block text-sm font-semibold text-amber-800 underline" href="https://ai.fmcsa.dot.gov/hhg/search.asp" target="_blank" rel="noreferrer">
               FMCSA mover lookup →
             </a>
-          </div>
+          </Card>
         )}
         {isLongDistance(move) && (
-          <div className="card">
-            <div className="font-bold">🛣️ Long-distance tips</div>
+          <Card id="move.long-distance" title="Long-distance tips" bodyClassName="mt-2">
             <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-gray-700">
               <li>Delivery windows can be 2–21 days — pack an “open first” suitcase per person.</li>
               <li>Plan overnight stops (pet-friendly if needed) and car maintenance before the drive.</li>
               <li>Carry documents, medications, jewelry and laptops with you.</li>
               <li>Get binding or not-to-exceed estimates based on an in-home or video survey.</li>
             </ul>
-          </div>
+          </Card>
         )}
       </aside>
     </div>
