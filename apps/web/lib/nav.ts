@@ -2,6 +2,7 @@ export interface NavItem {
   href: string;
   label: string;
   icon: string;
+  symbol?: string;
 }
 
 export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
@@ -57,8 +58,8 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
 ];
 
 export const MOBILE_TABS: NavItem[] = [
-  { href: "/", label: "Home", icon: "🏠" },
-  { href: "/calendar", label: "Calendar", icon: "📅" },
-  { href: "/scan", label: "Scan", icon: "▦" },
-  { href: "/inventory", label: "Inventory", icon: "🛋️" },
+  { href: "/", label: "Home", icon: "🏠", symbol: "house" },
+  { href: "/calendar", label: "Calendar", icon: "📅", symbol: "calendar" },
+  { href: "/scan", label: "Scan", icon: "▦", symbol: "scan" },
+  { href: "/inventory", label: "Inventory", icon: "🛋️", symbol: "box" },
 ];

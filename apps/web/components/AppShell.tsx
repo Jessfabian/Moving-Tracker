@@ -11,6 +11,7 @@ import { useSyncMoveDistance } from "./MoveDistance";
 import { MoreSheet } from "./MoreSheet";
 import { NamePrompt, PullToRefresh, SyncToaster } from "./SyncFeedback";
 import { UndoToast } from "./Swipe";
+import { Glyph } from "./Symbols";
 
 function SyncBadge({ dark }: { dark?: boolean }) {
   const status = useSyncStatus();
@@ -134,7 +135,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <UndoToast />
       <PullToRefresh />
       <div className="flex min-h-screen">
-        <aside className="sticky top-0 hidden h-screen w-[16.5rem] flex-none flex-col gap-6 overflow-y-auto bg-ink px-4 py-5 text-white lg:flex [&>*]:flex-none">
+        <aside className="sticky top-0 hidden h-screen w-[16.5rem] flex-none flex-col gap-6 ink-panel overflow-y-auto bg-ink px-4 py-5 text-white lg:flex [&>*]:flex-none">
           <div className="px-2">
             <Logo dark />
           </div>
@@ -160,22 +161,23 @@ export function AppShell({ children }: { children: ReactNode }) {
           )}</main>
         </div>
 
-        <nav aria-label="Main" className="duo-tabbar fixed left-[max(0.75rem,env(safe-area-inset-left))] right-[max(0.75rem,env(safe-area-inset-right))] bottom-3 z-40 mb-[env(safe-area-inset-bottom)] grid grid-cols-5 gap-1 rounded-full bg-ink p-1.5 shadow-[0_18px_40px_-14px_rgba(13,13,15,0.6)] lg:hidden short:hidden">
+        <nav aria-label="Main" className="duo-tabbar material-bar fixed left-[max(0.75rem,env(safe-area-inset-left))] right-[max(0.75rem,env(safe-area-inset-right))] bottom-3 z-40 mb-[env(safe-area-inset-bottom)] grid grid-cols-5 gap-0.5 rounded-full p-1 lg:hidden short:hidden">
           {MOBILE_TABS.map((t) => {
             const active = t.href === "/" ? path === "/" : path.startsWith(t.href);
             return (
               <Link
                 key={t.href}
                 href={t.href}
-                className={`flex flex-col items-center rounded-full py-1.5 text-[11px] font-semibold transition ${active ? "bg-lime text-ink" : "text-white/60"}`}
+                aria-current={active ? "page" : undefined}
+                className={`flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-full text-[10.5px] font-semibold transition-colors ${active ? "bg-ink/[0.07] text-accent" : "text-gray-600 active:bg-ink/5"}`}
               >
-                <span className="text-lg leading-6">{t.icon}</span>
+                <Glyph name={t.symbol ?? ""} className="h-[22px] w-[22px]" />
                 {t.label}
               </Link>
             );
           })}
-          <button onClick={() => setMenu(true)} className="flex flex-col items-center rounded-full py-1.5 text-[11px] font-semibold text-white/60">
-            <span className="text-lg leading-6">☰</span>
+          <button onClick={() => setMenu(true)} aria-haspopup="dialog" className="flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-full text-[10.5px] font-semibold text-gray-600 active:bg-ink/5">
+            <Glyph name="more" className="h-[22px] w-[22px]" />
             More
           </button>
         </nav>
@@ -185,17 +187,17 @@ export function AppShell({ children }: { children: ReactNode }) {
           aria-label="Main"
           className="pointer-events-none fixed top-[max(0.5rem,env(safe-area-inset-top))] right-[max(0.5rem,env(safe-area-inset-right))] bottom-[max(0.5rem,env(safe-area-inset-bottom))] z-40 hidden w-14 flex-col items-center justify-between gap-3 short:flex"
         >
-          <div className="pointer-events-auto flex flex-col gap-1 rounded-full bg-white/85 p-1 shadow-[0_10px_30px_-12px_rgba(13,13,15,0.45)] ring-1 ring-black/5 backdrop-blur-xl">
+          <div className="material-bar pointer-events-auto flex flex-col gap-1 rounded-full p-1">
             {path !== "/" && (
-              <button onClick={() => router.back()} aria-label="Back" title="Back" className="grid h-11 w-11 place-items-center rounded-full text-xl text-ink active:bg-black/5">
-                ‹
+              <button onClick={() => router.back()} aria-label="Back" title="Back" className="grid h-11 w-11 place-items-center rounded-full text-ink active:bg-ink/5">
+                <Glyph name="back" className="h-[22px] w-[22px]" />
               </button>
             )}
-            <button onClick={() => setMenu(true)} aria-label="More" title="More" className="grid h-11 w-11 place-items-center rounded-full text-lg text-ink active:bg-black/5">
-              ☰
+            <button onClick={() => setMenu(true)} aria-label="More" title="More" aria-haspopup="dialog" className="grid h-11 w-11 place-items-center rounded-full text-ink active:bg-ink/5">
+              <Glyph name="more" className="h-[22px] w-[22px]" />
             </button>
           </div>
-          <div className="pointer-events-auto flex flex-col gap-1 rounded-full bg-white/85 p-1 shadow-[0_10px_30px_-12px_rgba(13,13,15,0.45)] ring-1 ring-black/5 backdrop-blur-xl">
+          <div className="material-bar pointer-events-auto flex flex-col gap-1 rounded-full p-1">
             {MOBILE_TABS.map((t) => {
               const active = t.href === "/" ? path === "/" : path.startsWith(t.href);
               return (
@@ -205,9 +207,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                   aria-label={t.label}
                   title={t.label}
                   aria-current={active ? "page" : undefined}
-                  className={`grid h-11 w-11 place-items-center rounded-full text-lg transition ${active ? "bg-ink shadow-md" : "active:bg-black/5"}`}
+                  className={`grid h-11 w-11 place-items-center rounded-full transition-colors ${active ? "bg-ink/[0.07] text-accent" : "text-gray-600 active:bg-ink/5"}`}
                 >
-                  {t.icon}
+                  <Glyph name={t.symbol ?? ""} className="h-[22px] w-[22px]" />
                 </Link>
               );
             })}

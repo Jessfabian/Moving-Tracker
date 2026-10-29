@@ -209,7 +209,7 @@ export function PickAll({ count, total, onAll, onClear, noun = "item", className
 export function SelectActions({ sel, children, summary, noun = "item" }: { sel: Selection; children: ReactNode; summary?: ReactNode; noun?: string }) {
   if (!sel.active) return null;
   return (
-    <div className="sticky bottom-[calc(5.5rem+env(safe-area-inset-bottom))] z-30 mt-6 space-y-2 rounded-3xl bg-ink p-3 text-white shadow-2xl lg:bottom-4">
+    <div className="sticky bottom-[calc(5.5rem+env(safe-area-inset-bottom))] z-30 mt-6 ink-panel space-y-2 rounded-3xl bg-ink p-3 text-white shadow-2xl lg:bottom-4">
       <div className="px-1 text-sm">
         {sel.count ? (
           <>

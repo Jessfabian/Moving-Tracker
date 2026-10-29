@@ -5,6 +5,8 @@ import { AppShell } from "@/components/AppShell";
 import { NAV_POSITION_SCRIPT } from "@/lib/navPositionScript";
 import { StoreProvider } from "@/lib/store-context";
 import "./globals.css";
+import "./dark-palette.css";
+import "./dark.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
 const display = Bricolage_Grotesque({ subsets: ["latin"], variable: "--font-display-face", display: "swap", weight: ["500", "700", "800"] });
@@ -21,7 +23,11 @@ export const viewport: Viewport = {
   // Stops iOS auto-zooming into focused fields; pinch-zoom still works in iOS Safari.
   maximumScale: 1,
   viewportFit: "cover",
-  themeColor: "#f3f1ec",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f3f1ec" },
+    { media: "(prefers-color-scheme: dark)", color: "#000000" },
+  ],
+  colorScheme: "light dark",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

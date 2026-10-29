@@ -43,7 +43,7 @@ export function MoreSheet({ onClose }: { onClose: () => void }) {
     <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="More">
       <div className="animate-fade absolute inset-0 bg-black/25" onClick={onClose} />
       <div
-        className="animate-sheet absolute inset-x-0 bottom-0 flex max-h-[calc(100dvh-max(2.5rem,env(safe-area-inset-top)))] flex-col overflow-hidden rounded-t-[1.75rem] bg-[#f2f2f7] shadow-2xl
+        className="animate-sheet absolute inset-x-0 bottom-0 flex max-h-[calc(100dvh-max(2.5rem,env(safe-area-inset-top)))] flex-col overflow-hidden rounded-t-[1.75rem] bg-grouped shadow-2xl
           short:animate-pop short:inset-x-auto short:top-[max(0.5rem,env(safe-area-inset-top))] short:right-[calc(4.5rem+env(safe-area-inset-right))] short:bottom-[max(0.5rem,env(safe-area-inset-bottom))] short:max-h-none short:w-[min(22rem,calc(100vw-6rem))] short:rounded-[1.5rem]"
       >
         <div className="flex justify-center pt-2 short:hidden">
@@ -58,7 +58,7 @@ export function MoreSheet({ onClose }: { onClose: () => void }) {
 
         <div className="flex-1 space-y-6 overflow-y-auto overscroll-contain px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
           {move && (
-            <Link href="/move" onClick={onClose} className="flex items-center gap-4 rounded-2xl bg-ink p-4 text-white active:opacity-80">
+            <Link href="/move" onClick={onClose} className="ink-panel flex items-center gap-4 rounded-2xl bg-ink p-4 text-white active:opacity-80">
               <div className="flex flex-col items-center leading-none">
                 <span className="font-display text-[34px] font-extrabold tracking-[-0.05em] text-lime">{d === null ? "—" : d > 0 ? d : "✓"}</span>
                 <span className="mt-1 text-[11px] text-white/60">{d !== null && d > 0 ? (d === 1 ? "day" : "days") : ""}</span>

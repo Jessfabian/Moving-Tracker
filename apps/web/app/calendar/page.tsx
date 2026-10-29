@@ -97,7 +97,7 @@ export default function CalendarPage() {
       </header>
 
       <div className="grid gap-4 md:grid-cols-3">
-        <div className="tile bg-ink text-white md:col-span-1">
+        <div className="ink-panel tile bg-ink text-white md:col-span-1">
           <div className="eyebrow text-white/50">Next key date</div>
           {nextKey ? (
             <>

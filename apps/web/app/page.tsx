@@ -446,7 +446,7 @@ export default function Dashboard() {
         </section>
 
         {/* Books */}
-        <TileLink href="/books" className="min-h-40 bg-ink text-white md:col-span-3 xl:col-span-3">
+        <TileLink href="/books" className="ink-panel min-h-40 bg-ink text-white md:col-span-3 xl:col-span-3">
           <div className="eyebrow text-white/50">Books</div>
           <div>
             <div className="display text-5xl text-lime">{ins.books.total}</div>

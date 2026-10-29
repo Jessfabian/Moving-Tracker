@@ -186,7 +186,7 @@ export function FlightLookup({ draft, setDraft }: { draft: Row; setDraft: (fn: (
   const milesValue = milesDollarValue({ miles_used: miles, miles_value: (draft.miles_value as number | null) ?? null, airline, provider: str(draft.provider) });
 
   return (
-    <div className="space-y-3 rounded-3xl bg-ink p-4 text-white">
+    <div className="ink-panel space-y-3 rounded-3xl bg-ink p-4 text-white">
       <div>
         <div className="font-display text-lg font-bold tracking-tight">Pull up the flight</div>
         <p className="text-xs text-white/60">

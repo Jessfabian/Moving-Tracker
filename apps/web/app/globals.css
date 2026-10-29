@@ -201,7 +201,7 @@ h3 {
     @apply w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-ink transition outline-none placeholder:text-gray-400 hover:border-gray-300 focus:border-ink focus:bg-white focus:ring-4 focus:ring-ink/5;
   }
   .label {
-    @apply mb-1.5 block text-[11px] font-semibold tracking-[0.08em] text-gray-500 uppercase;
+    @apply mb-1.5 block text-[13px] font-medium text-gray-500;
   }
   .chip {
     @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold;
@@ -436,6 +436,71 @@ main > * {
 
 .safe-bottom {
   padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* iOS grouped background (Settings-style lists). */
+.bg-grouped {
+  background-color: #f2f2f7;
+}
+
+/* Bar material (HIG Materials): translucent and blurred so content shows through, with a hairline edge. */
+.material-bar {
+  background: rgba(250, 250, 250, 0.78);
+  -webkit-backdrop-filter: blur(24px) saturate(1.8);
+  backdrop-filter: blur(24px) saturate(1.8);
+  box-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.1),
+    0 12px 32px -14px rgba(0, 0, 0, 0.35);
+}
+@media (prefers-color-scheme: dark) {
+  .material-bar {
+    background: rgba(30, 30, 32, 0.78);
+    box-shadow:
+      0 0 0 0.5px rgba(255, 255, 255, 0.12),
+      0 12px 32px -14px rgba(0, 0, 0, 0.8);
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .material-bar {
+    background: #f9f9f9;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+@media (prefers-reduced-transparency: reduce) and (prefers-color-scheme: dark) {
+  .material-bar {
+    background: #1e1e20;
+  }
+}
+
+/* Accessibility: visible keyboard focus, Reduce Motion, Increase Contrast. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+@media (prefers-contrast: more) {
+  .text-gray-400,
+  .text-slate-400 {
+    color: var(--color-gray-600);
+  }
+  .text-gray-500,
+  .text-slate-500 {
+    color: var(--color-gray-700);
+  }
+  .card,
+  .input {
+    border-color: var(--color-gray-400);
+  }
 }
 
 /* Save bar in a sheet: flush with the bottom edge (no gap for fields to peek through) and clear of the home indicator. */

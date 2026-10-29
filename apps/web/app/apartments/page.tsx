@@ -625,7 +625,7 @@ function Detail({ a }: { a: Apartment }) {
         {addr && <span className="min-w-0 text-sm text-gray-500">{addr}</span>}
       </div>
       {(c.monthly > 0 || c.moveIn > 0) && (
-        <div className="grid grid-cols-3 gap-2 rounded-3xl bg-ink p-4 text-white">
+        <div className="ink-panel grid grid-cols-3 gap-2 rounded-3xl bg-ink p-4 text-white">
           {[
             ["Monthly", c.monthly],
             ["Move-in", c.moveIn],

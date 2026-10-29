@@ -143,7 +143,7 @@ export function Empty({ icon, title, children }: { icon: string; title: string; 
 
 export function Chip({ children, color }: { children: ReactNode; color?: string }) {
   return (
-    <span className="chip" style={color ? { background: `${color}1a`, color } : { background: "rgba(13,13,15,.06)", color: "#0d0d0f" }}>
+    <span className="chip" style={color ? { background: `${color}1a`, color } : { background: "color-mix(in oklab, var(--color-ink) 7%, transparent)", color: "var(--color-ink)" }}>
       {children}
     </span>
   );

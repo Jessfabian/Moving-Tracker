@@ -403,7 +403,7 @@ export function RoomScan({ open, onClose, initialRoomId, onSaved }: { open: bool
               </div>
             )}
 
-            <div className="sticky bottom-0 -mx-1 space-y-2 rounded-2xl bg-ink p-3 text-white">
+            <div className="ink-panel sticky bottom-0 -mx-1 space-y-2 rounded-2xl bg-ink p-3 text-white">
               <div className="flex flex-wrap justify-between gap-2 text-sm">
                 <span>
                   {chosen.length} item{chosen.length === 1 ? "" : "s"} · worth ~{formatMoney(totalValue)} used

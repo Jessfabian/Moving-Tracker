@@ -72,7 +72,7 @@ export function UndoToast() {
   if (!t) return null;
   return createPortal(
     <div className="pointer-events-none fixed inset-x-0 bottom-[calc(5.5rem+env(safe-area-inset-bottom))] z-[60] flex justify-center px-4 lg:bottom-6" role="status">
-      <div key={t.id} className="animate-pop pointer-events-auto flex max-w-md min-w-0 items-center gap-3 rounded-2xl bg-ink py-2 pr-2 pl-4 text-sm text-white shadow-2xl">
+      <div key={t.id} className="animate-pop pointer-events-auto flex max-w-md min-w-0 items-center gap-3 ink-panel rounded-2xl bg-ink py-2 pr-2 pl-4 text-sm text-white shadow-2xl">
         <span className="min-w-0 flex-1 truncate">{t.text}</span>
         {t.undo && (
           <button

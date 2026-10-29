@@ -38,6 +38,7 @@ import { LivePrices } from "./LivePrices";
 import { MediaField } from "./Media";
 import { MoveDistance } from "./MoveDistance";
 import { Scanner } from "./Scanner";
+import { useDeleteWithUndo } from "./Swipe";
 
 type Row = Record<string, unknown>;
 
@@ -338,7 +339,7 @@ function ListingImport({ draft, setDraft }: { draft: Row; setDraft: (fn: (d: Row
   return (
     <div className="space-y-3">
       {collapsed ? (
-        <div className="flex min-h-14 items-center gap-3 rounded-2xl bg-ink px-4 py-2 text-white">
+        <div className="ink-panel flex min-h-14 items-center gap-3 rounded-2xl bg-ink px-4 py-2 text-white">
           <span className="grid h-8 w-8 flex-none place-items-center rounded-full bg-lime font-bold text-ink">✓</span>
           <div className="min-w-0 flex-1">
             <div className="truncate text-[15px] font-semibold">{host ? `Imported from ${host}` : "Listing imported"}</div>
@@ -349,7 +350,7 @@ function ListingImport({ draft, setDraft }: { draft: Row; setDraft: (fn: (d: Row
           </button>
         </div>
       ) : (
-    <div className="rounded-3xl bg-ink p-4 text-white">
+    <div className="ink-panel rounded-3xl bg-ink p-4 text-white">
       <div className="mb-1 font-display text-lg font-bold tracking-tight">Import from a listing link</div>
       <p className="mb-3 text-[13px] text-white/60">Paste a link from Zillow, FirstKey, a building&apos;s own site… We&apos;ll pull the photos, address, rent, beds and size. For Apartments.com, copy the page text instead (steps below).</p>
       <div className="flex gap-2">
@@ -651,7 +652,12 @@ export function EntityForm<T extends TableName>({
   const [draft, setDraft] = useState<Row>(() => ({ ...(JSON.parse(JSON.stringify(DEFAULTS[table])) as Row), ...(initial as Row), ...(row as unknown as Row) }));
   const [scan, setScan] = useState(false);
   const [lookupMsg, setLookupMsg] = useState<string | null>(null);
-  const set = (k: string, v: unknown) => setDraft((d) => ({ ...d, [k]: v }));
+  const [missing, setMissing] = useState<string | null>(null);
+  const del = useDeleteWithUndo();
+  const set = (k: string, v: unknown) => {
+    if (k === missing) setMissing(null);
+    setDraft((d) => ({ ...d, [k]: v }));
+  };
 
   const isFlight = table === "travel" && draft.kind === "flight";
   const travelKind = table === "travel" ? String(draft.kind ?? "") : null;
@@ -708,7 +714,8 @@ export function EntityForm<T extends TableName>({
   const save = () => {
     const title = draft[schema.titleField];
     if (schema.fields.some((f) => f.required && f.key === schema.titleField) && !String(title ?? "").trim()) {
-      alert(`Please enter ${schema.fields.find((f) => f.key === schema.titleField)?.label.toLowerCase()}`);
+      setMissing(schema.titleField);
+      document.getElementById(`f-${schema.titleField}`)?.focus();
       return;
     }
     const clean = { ...draft };
@@ -848,6 +855,11 @@ export function EntityForm<T extends TableName>({
                   </label>
                 )}
                 <FieldInput field={f} value={draft[f.key]} onChange={(v) => set(f.key, v)} onPatch={(p) => setDraft((d) => ({ ...d, ...p }))} />
+                {missing === f.key && (
+                  <p className="mt-1 text-[13px] font-medium text-red-600" role="alert">
+                    Add {f.label.toLowerCase()} to save.
+                  </p>
+                )}
                 {f.help && <p className="mt-1 text-xs text-gray-400">{f.help}</p>}
               </div>
             ))}
@@ -887,10 +899,9 @@ export function EntityForm<T extends TableName>({
             type="button"
             className="btn-danger"
             onClick={() => {
-              if (confirm(`Delete this ${schema.singular.toLowerCase()}?`)) {
-                store.remove(table, row.id);
-                onDone(null);
-              }
+              const name = String(draft[schema.titleField] ?? "").trim();
+              del(table, row.id, name ? `“${name}”` : undefined);
+              onDone(null);
             }}
           >
             Delete
