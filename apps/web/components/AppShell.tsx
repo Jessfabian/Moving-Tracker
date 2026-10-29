@@ -9,6 +9,7 @@ import { useApp, useDb, useSyncStatus } from "@/lib/store-context";
 import { CloudGate } from "./CloudGate";
 import { useSyncMoveDistance } from "./MoveDistance";
 import { MoreSheet } from "./MoreSheet";
+import { NamePrompt, PullToRefresh, SyncToaster } from "./SyncFeedback";
 
 function SyncBadge({ dark }: { dark?: boolean }) {
   const status = useSyncStatus();
@@ -128,6 +129,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <CloudGate>
       <DistanceSync />
+      <SyncToaster />
+      <PullToRefresh />
       <div className="flex min-h-screen">
         <aside className="sticky top-0 hidden h-screen w-[16.5rem] flex-none flex-col gap-6 overflow-y-auto bg-ink px-4 py-5 text-white lg:flex [&>*]:flex-none">
           <div className="px-2">
@@ -145,7 +148,14 @@ export function AppShell({ children }: { children: ReactNode }) {
             <Logo />
             <SyncBadge />
           </header>
-          <main className="mx-auto w-full max-w-[1180px] flex-1 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pt-3 pb-32 sm:pl-[max(1.5rem,env(safe-area-inset-left))] sm:pr-[max(1.5rem,env(safe-area-inset-right))] lg:px-10 lg:pt-10 lg:pb-14 short:pt-[max(0.75rem,env(safe-area-inset-top))] short:pb-6 short:pr-[calc(4.5rem+env(safe-area-inset-right))] short:pl-[max(1.5rem,env(safe-area-inset-left))]">{store ? children : <div className="text-gray-500">Loading your move…</div>}</main>
+          <main className="mx-auto w-full max-w-[1180px] flex-1 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pt-3 pb-32 sm:pl-[max(1.5rem,env(safe-area-inset-left))] sm:pr-[max(1.5rem,env(safe-area-inset-right))] lg:px-10 lg:pt-10 lg:pb-14 short:pt-[max(0.75rem,env(safe-area-inset-top))] short:pb-6 short:pr-[calc(4.5rem+env(safe-area-inset-right))] short:pl-[max(1.5rem,env(safe-area-inset-left))]">{store ? (
+            <>
+              <NamePrompt />
+              {children}
+            </>
+          ) : (
+            <div className="text-gray-500">Loading your move…</div>
+          )}</main>
         </div>
 
         <nav aria-label="Main" className="duo-tabbar fixed left-[max(0.75rem,env(safe-area-inset-left))] right-[max(0.75rem,env(safe-area-inset-right))] bottom-3 z-40 mb-[env(safe-area-inset-bottom)] grid grid-cols-5 gap-1 rounded-full bg-ink p-1.5 shadow-[0_18px_40px_-14px_rgba(13,13,15,0.6)] lg:hidden short:hidden">

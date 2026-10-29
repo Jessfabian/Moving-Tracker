@@ -5,15 +5,18 @@ import {
   createSupabase,
   emptySnapshot,
   joinHousehold,
+  listHouseholdMembers,
   listHouseholds,
   MovingStore,
+  personName,
+  setMyDisplayName,
   supabaseAdapter,
   type Household,
   type Snapshot,
   type SyncStatus,
 } from "@moving/shared";
 import type { Session, SupabaseClient } from "@supabase/supabase-js";
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { idbKV } from "./kv";
 import { readMedia } from "./media";
 
@@ -58,6 +61,8 @@ interface Ctx {
   households: Household[];
   householdsLoaded: boolean;
   refreshHouseholds: () => Promise<void>;
+  /** Sets the name shown to the family (activity feed, "Mike added…"). */
+  saveMyName: (name: string) => Promise<void>;
   createHousehold: (name: string) => Promise<void>;
   joinHousehold: (code: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -159,15 +164,45 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     void refreshHouseholds().catch(() => setHouseholds([]));
   }, [refreshHouseholds]);
 
-  const actorName = settings.displayName || session?.user.email || "Me";
+  const actorName = settings.displayName.trim() || (session?.user.email ? personName(session.user.email) : "Me");
+  const actorRef = useRef(actorName);
+  useEffect(() => {
+    actorRef.current = actorName;
+  }, [actorName]);
+
+  // No name on this device yet: use the one saved on the shared move (from joining or another device).
+  useEffect(() => {
+    if (!supabase || !session || !settings.householdId || settings.displayName.trim()) return;
+    void listHouseholdMembers(supabase, settings.householdId)
+      .then((list) => {
+        const mine = list.find((m) => m.user_id === session.user.id)?.display_name?.trim();
+        if (mine && !mine.includes("@")) updateSettings({ displayName: mine });
+      })
+      .catch(() => undefined);
+  }, [supabase, session, settings.householdId, settings.displayName, updateSettings]);
+
+  const saveMyName = useCallback(
+    async (raw: string) => {
+      const name = raw.trim();
+      if (!name) return;
+      const old = new Set([settings.displayName.trim(), session?.user.email ?? "", actorRef.current].filter(Boolean).map((x) => x.toLowerCase()));
+      updateSettings({ displayName: name });
+      actorRef.current = name;
+      // Re-label your earlier activity so it says your name instead of your email.
+      if (store) for (const a of store.list("activity")) if (a.actor && a.actor !== name && old.has(a.actor.toLowerCase())) store.update("activity", a.id, { actor: name }, { silent: true });
+      if (supabase && session && settings.householdId) await setMyDisplayName(supabase, settings.householdId, session.user.id, name).catch(() => undefined);
+    },
+    [settings.displayName, settings.householdId, session, supabase, store, updateSettings],
+  );
 
   useEffect(() => {
     if (!settingsLoaded) return;
     let s: MovingStore | null = null;
+    const actor = () => actorRef.current;
     if (settings.mode === "local") {
-      s = new MovingStore(idbKV, "local", () => actorName);
+      s = new MovingStore(idbKV, "local", actor);
     } else if (supabase && session && settings.householdId) {
-      s = new MovingStore(idbKV, settings.householdId, () => actorName, supabaseAdapter(supabase, settings.householdId, readMedia));
+      s = new MovingStore(idbKV, settings.householdId, actor, supabaseAdapter(supabase, settings.householdId, readMedia));
     }
     if (!s) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -190,14 +225,34 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     });
     const onOnline = () => void inst.sync();
     window.addEventListener("online", onOnline);
-    const timer = setInterval(() => void inst.sync(), 60000);
+    // Phones freeze timers and drop the live connection in the background: catch up as soon as
+    // the app is back on screen, and check every 15 seconds while it's open.
+    let hiddenAt = 0;
+    const onVisible = () => {
+      if (document.visibilityState === "hidden") {
+        hiddenAt = Date.now();
+        return;
+      }
+      if (inst.status.mode !== "cloud") return;
+      if (hiddenAt && Date.now() - hiddenAt > 20000) inst.restartRealtime();
+      void inst.sync();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    window.addEventListener("pageshow", onVisible);
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible") void inst.sync();
+    }, 15000);
     return () => {
       cancelled = true;
       inst.stop();
       window.removeEventListener("online", onOnline);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+      window.removeEventListener("pageshow", onVisible);
       clearInterval(timer);
     };
-    // actorName is read lazily through the closure on each write.
+    // The actor name is read through actorRef on each write.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settingsLoaded, settings.mode, settings.householdId, supabase, session?.user.id]);
 
@@ -210,6 +265,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     households,
     householdsLoaded,
     refreshHouseholds,
+    saveMyName,
     createHousehold: async (name) => {
       const id = await createHousehold(supabase!, name, actorName);
       await refreshHouseholds().catch(() => undefined);

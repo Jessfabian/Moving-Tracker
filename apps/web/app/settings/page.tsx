@@ -1,6 +1,6 @@
 "use client";
 
-import { listHouseholdMembers, MovingStore, type HouseholdMember } from "@moving/shared";
+import { listHouseholdMembers, MovingStore, personName, type HouseholdMember } from "@moving/shared";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { NavPositionPicker } from "@/components/NavPositionPicker";
@@ -10,10 +10,11 @@ import { useApp, useSyncStatus } from "@/lib/store-context";
 
 export default function SettingsPage() {
   const app = useApp();
-  const { settings, updateSettings, store, supabase, session, households } = app;
+  const { settings, updateSettings, store, supabase, session, households, saveMyName } = app;
   const status = useSyncStatus();
   const router = useRouter();
   const [name, setName] = useState(settings.displayName);
+  const [nameSaved, setNameSaved] = useState(false);
   const [url, setUrl] = useState(settings.supabaseUrl);
   const [key, setKey] = useState(settings.supabaseKey);
   const [members, setMembers] = useState<HouseholdMember[]>([]);
@@ -50,8 +51,16 @@ export default function SettingsPage() {
           </label>
           <div className="flex gap-2">
             <input id="dn" className="input" value={name} onChange={(e) => setName(e.target.value)} />
-            <button className="btn-secondary" onClick={() => updateSettings({ displayName: name.trim() })}>
-              Save
+            <button
+              className="btn-secondary"
+              onClick={async () => {
+                await saveMyName(name);
+                if (supabase && settings.householdId) void listHouseholdMembers(supabase, settings.householdId).then(setMembers).catch(() => undefined);
+                setNameSaved(true);
+                setTimeout(() => setNameSaved(false), 3000);
+              }}
+            >
+              {nameSaved ? "Saved ✓" : "Save"}
             </button>
           </div>
         </div>
@@ -119,7 +128,7 @@ export default function SettingsPage() {
                     <ul className="text-sm">
                       {members.map((m) => (
                         <li key={m.user_id} className="flex justify-between border-b border-gray-100 py-1">
-                          <span>{m.display_name || "Member"}</span>
+                          <span>{personName(m.display_name) === "Someone" ? "Member" : personName(m.display_name)}{m.user_id === session?.user.id ? " (you)" : ""}</span>
                           <span className="text-gray-500">{m.role}</span>
                         </li>
                       ))}

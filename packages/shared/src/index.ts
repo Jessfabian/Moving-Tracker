@@ -29,3 +29,4 @@ export * from './roomScan';
 export * from './supplies';
 export * from './livePrices';
 export * from './packing';
+export * from './subscriptions';

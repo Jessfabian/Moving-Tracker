@@ -20,6 +20,7 @@ import {
   maxAffordableRent,
   memberAge,
   optionLabel,
+  personName,
   primaryPlace,
   today,
 } from "@moving/shared";
@@ -463,7 +464,7 @@ export default function Dashboard() {
               {activity.map((a) => (
                 <li key={a.id} className="flex justify-between gap-2">
                   <span className="min-w-0 truncate">
-                    <span className="font-semibold">{a.actor}</span>{" "}
+                    <span className="font-semibold">{personName(a.actor, db.family_members)}</span>{" "}
                     <span className="text-gray-600">{a.action === "created" && a.entity_id ? "added" : a.action === "deleted" ? "removed" : a.entity_id ? "updated" : ""}</span> {a.label}
                   </span>
                   <span className="flex-none text-xs text-gray-400">{timeAgo(a.updated_at, Date.parse(new Date().toISOString()))}</span>

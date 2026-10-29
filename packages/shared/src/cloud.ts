@@ -58,6 +58,27 @@ export async function listHouseholdMembers(sb: SupabaseClient, householdId: stri
   return data ?? [];
 }
 
+/** Saves your name on the shared move so the family sees "Mike", not an email. */
+export async function setMyDisplayName(sb: SupabaseClient, householdId: string, userId: string, name: string): Promise<void> {
+  const { error } = await sb.from('household_members').update({ display_name: name }).eq('household_id', householdId).eq('user_id', userId);
+  if (error) throw error;
+}
+
+/**
+ * Turns whatever was saved as "who did it" into a first name: an email becomes the matching
+ * family member's name, or a tidy version of the part before the @.
+ */
+export function personName(actor: string | null | undefined, family: { name: string; email?: string }[] = [], aliases: Record<string, string> = {}): string {
+  const a = (actor ?? '').trim();
+  if (!a) return 'Someone';
+  if (aliases[a.toLowerCase()]) return aliases[a.toLowerCase()]!;
+  if (!a.includes('@')) return a;
+  const match = family.find((f) => f.email && f.email.trim().toLowerCase() === a.toLowerCase());
+  if (match?.name) return match.name.split(' ')[0]!;
+  const local = a.split('@')[0]!.replace(/[._-]+/g, ' ').replace(/\d+/g, '').trim();
+  return local ? local.replace(/\b[a-z]/g, (c) => c.toUpperCase()) : 'Someone';
+}
+
 export async function signedMediaUrl(sb: SupabaseClient, path: string): Promise<string | null> {
   const { data } = await sb.storage.from(MEDIA_BUCKET).createSignedUrl(path, 60 * 60);
   return data?.signedUrl ?? null;
@@ -134,19 +155,21 @@ export function supabaseAdapter(
       return out;
     },
     subscribe(onRow) {
-      const channel = sb.channel(`household-${householdId}`);
-      for (const table of TABLES) {
-        channel.on(
-          'postgres_changes' as never,
-          { event: '*', schema: 'public', table, filter: `household_id=eq.${householdId}` },
-          (payload: { new?: BaseRow }) => {
-            if (payload.new && (payload.new as BaseRow).id) onRow(table as TableName, payload.new as BaseRow);
-          },
-        );
-      }
-      channel.subscribe();
+      // One channel per table: if a table isn't in the cloud yet, only that table loses live updates.
+      const channels = TABLES.map((table) =>
+        sb
+          .channel(`household-${householdId}-${table}`)
+          .on(
+            'postgres_changes' as never,
+            { event: '*', schema: 'public', table, filter: `household_id=eq.${householdId}` },
+            (payload: { new?: BaseRow }) => {
+              if (payload.new && (payload.new as BaseRow).id) onRow(table as TableName, payload.new as BaseRow);
+            },
+          )
+          .subscribe(),
+      );
       return () => {
-        void sb.removeChannel(channel);
+        for (const c of channels) void sb.removeChannel(c);
       };
     },
     async uploadMedia(ref) {

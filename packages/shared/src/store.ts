@@ -31,12 +31,30 @@ interface PendingOp {
   id: string;
 }
 
+/** Something changed that a person should hear about ("Saved", "Mike added Couch"). */
+export interface ChangeEvent {
+  source: 'local' | 'remote';
+  table: TableName;
+  action: Activity['action'];
+  label: string;
+  actor: string;
+}
+
+/** The cloud doesn't have this table yet (its migration hasn't run) — not a real sync failure. */
+export function isMissingTable(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String((e as { message?: string })?.message ?? e);
+  return /could not find the table|relation "[^"]+" does not exist|PGRST205|42P01/i.test(msg);
+}
+
 const TRACKED: TableName[] = TABLES.filter((t) => t !== 'activity');
 
 export class MovingStore {
   private db: Snapshot = emptySnapshot();
   private snapshot: Snapshot = emptySnapshot();
   private listeners = new Set<() => void>();
+  private changeListeners = new Set<(e: ChangeEvent) => void>();
+  /** Tables the cloud doesn't have yet; their changes stay on this device until the migration runs. */
+  missingTables = new Set<TableName>();
   private pending: PendingOp[] = [];
   private lastPulled: Partial<Record<TableName, string>> = {};
   private dirtyTables = new Set<TableName>();
@@ -81,6 +99,21 @@ export class MovingStore {
   };
 
   getSnapshot = (): Snapshot => this.snapshot;
+
+  /** Fires when you save something, and when someone else's change arrives from the cloud. */
+  onChange = (fn: (e: ChangeEvent) => void) => {
+    this.changeListeners.add(fn);
+    return () => this.changeListeners.delete(fn);
+  };
+
+  private notify(e: ChangeEvent) {
+    this.changeListeners.forEach((l) => l(e));
+  }
+
+  /** Who is making changes on this device (the name shown in the activity feed). */
+  get me(): string {
+    return this.actor();
+  }
 
   private emit() {
     const s = {} as Snapshot;
@@ -134,7 +167,11 @@ export class MovingStore {
 
   insertMany<T extends TableName>(table: T, rows: NewRow<T>[]): TableMap[T][] {
     const out = rows.map((r) => this.insert(table, r, { silent: true }));
-    if (out.length) this.logText(table, `Added ${out.length} ${SCHEMAS[table].plural.toLowerCase()}`);
+    if (out.length) {
+      const label = `Added ${out.length} ${(out.length === 1 ? SCHEMAS[table].singular : SCHEMAS[table].plural).toLowerCase()}`;
+      this.logText(table, label);
+      this.notify({ source: 'local', table, action: 'created', label, actor: this.actor() });
+    }
     this.emit();
     return out;
   }
@@ -175,6 +212,7 @@ export class MovingStore {
     if (!TRACKED.includes(table)) return;
     const title = String((row as unknown as Record<string, unknown>)[SCHEMAS[table].titleField] ?? '') || SCHEMAS[table].singular;
     const actor = this.actor();
+    this.notify({ source: 'local', table, action, label: `${SCHEMAS[table].singular}: ${title}`, actor });
     const recent = (this.db.activity as Activity[]).find(
       (a) => a.entity_id === row.id && a.actor === actor && a.action === action && Date.now() - Date.parse(a.updated_at) < 120000,
     );
@@ -267,30 +305,60 @@ export class MovingStore {
     const remote = this.remote!;
     this.status = { ...this.status, syncing: true, error: null };
     this.listeners.forEach((l) => l());
+    const errors: string[] = [];
+    const fail = (table: TableName, e: unknown) => {
+      if (isMissingTable(e)) this.missingTables.add(table);
+      else errors.push(e instanceof Error ? e.message : cloudErrorMessage(e));
+    };
     try {
-      // Push local changes, uploading new media first.
+      // Push local changes, uploading new media first. A problem with one table must not hold
+      // back everything else, so each table is pushed (and pulled) on its own.
       const ops = [...this.pending];
       const byTable = new Map<TableName, BaseRow[]>();
       const pushedVersion = new Map<string, string>();
+      const failedTables = new Set<TableName>();
       for (const op of ops) {
         const row = (this.db[op.table] as BaseRow[]).find((r) => r.id === op.id);
         if (!row) continue;
-        const prepared = await this.prepareForPush(op.table, row);
-        pushedVersion.set(`${op.table}:${op.id}`, prepared.updated_at);
-        (byTable.get(op.table) ?? byTable.set(op.table, []).get(op.table)!).push(prepared);
+        try {
+          const prepared = await this.prepareForPush(op.table, row);
+          pushedVersion.set(`${op.table}:${op.id}`, prepared.updated_at);
+          (byTable.get(op.table) ?? byTable.set(op.table, []).get(op.table)!).push(prepared);
+        } catch (e) {
+          failedTables.add(op.table);
+          fail(op.table, e);
+        }
       }
-      for (const [table, rows] of byTable) await remote.push(table, rows);
+      for (const [table, rows] of byTable) {
+        if (failedTables.has(table)) continue;
+        try {
+          await remote.push(table, rows);
+          this.missingTables.delete(table);
+        } catch (e) {
+          failedTables.add(table);
+          fail(table, e);
+        }
+      }
       this.pending = this.pending.filter((p) => {
-        if (!ops.includes(p)) return true;
+        if (!ops.includes(p) || failedTables.has(p.table)) return true;
         const current = (this.db[p.table] as BaseRow[]).find((r) => r.id === p.id);
         return !!current && current.updated_at !== pushedVersion.get(`${p.table}:${p.id}`);
       });
 
       // Pull remote changes.
+      const firstSync = !this.status.lastSync;
       for (const t of TABLES) {
-        const rows = await remote.pull(t, this.lastPulled[t] ?? null);
+        let rows: (BaseRow & { server_updated_at?: string })[];
+        try {
+          rows = await remote.pull(t, this.lastPulled[t] ?? null);
+          this.missingTables.delete(t);
+        } catch (e) {
+          fail(t, e);
+          continue;
+        }
         for (const r of rows) {
-          this.applyRemote(t, r);
+          const isNew = this.applyRemote(t, r);
+          if (isNew && !firstSync) this.announceRemote(t, r);
           if (r.server_updated_at && (!this.lastPulled[t] || r.server_updated_at > this.lastPulled[t]!)) this.lastPulled[t] = r.server_updated_at;
         }
         if (rows.length) this.dirtyTables.add(t);
@@ -299,11 +367,20 @@ export class MovingStore {
       await this.kv.setItem(this.key('_lastPulled'), JSON.stringify(this.lastPulled));
       await this.kv.setItem(this.key('_lastSync'), ts);
       await this.flushToDisk();
-      this.status = { ...this.status, syncing: false, lastSync: ts, error: null };
+      this.status = { ...this.status, syncing: false, lastSync: ts, error: errors.length ? errors.join(' · ') : null };
     } catch (e) {
       this.status = { ...this.status, syncing: false, error: e instanceof Error ? e.message : cloudErrorMessage(e) };
     }
     this.emit();
+  }
+
+  /** "Mike updated Item: Couch" — only for fresh activity from someone else. */
+  private announceRemote(table: TableName, row: BaseRow) {
+    if (table !== 'activity') return;
+    const a = row as Activity;
+    if (!a.actor || a.actor === this.actor() || a.deleted) return;
+    if (Date.now() - Date.parse(a.updated_at) > 15 * 60000) return;
+    this.notify({ source: 'remote', table: (a.entity as TableName) || 'activity', action: a.action, label: a.label, actor: a.actor });
   }
 
   private async prepareForPush(table: TableName, row: BaseRow): Promise<BaseRow> {
@@ -338,26 +415,36 @@ export class MovingStore {
     return out as unknown as BaseRow;
   }
 
-  private applyRemote(table: TableName, incoming: BaseRow & { server_updated_at?: string }) {
-    if (this.pending.some((p) => p.table === table && p.id === incoming.id)) return;
+  /** Returns true when the row is new to this device. */
+  private applyRemote(table: TableName, incoming: BaseRow & { server_updated_at?: string }): boolean {
+    if (this.pending.some((p) => p.table === table && p.id === incoming.id)) return false;
     const rows = this.db[table] as BaseRow[];
     const i = rows.findIndex((r) => r.id === incoming.id);
     const { server_updated_at: _s, ...row } = incoming;
     if (i >= 0) {
-      if (rows[i]!.updated_at > row.updated_at) return;
+      if (rows[i]!.updated_at > row.updated_at) return false;
       // Spread the local row first so on-device-only columns (not in the cloud schema yet) survive a pull.
       rows[i] = mergeLocalMedia(table, rows[i]!, { ...rows[i]!, ...row } as BaseRow);
-    } else rows.push(row);
+      return false;
+    }
+    rows.push(row);
+    return true;
   }
 
   startRealtime() {
     if (!this.remote || this.unsubscribeRemote) return;
     this.unsubscribeRemote = this.remote.subscribe((table, row) => {
-      this.applyRemote(table, row);
+      if (this.applyRemote(table, row)) this.announceRemote(table, row);
       this.dirtyTables.add(table);
       this.scheduleSave();
       this.emit();
     });
+  }
+
+  /** Phones drop the live connection while the app is in the background — reconnect on return. */
+  restartRealtime() {
+    this.stop();
+    this.startRealtime();
   }
 
   stop() {

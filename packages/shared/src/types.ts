@@ -301,6 +301,36 @@ export interface Bill extends BaseRow {
   status: BillStatus;
   payer_id: ID | null;
   website: string;
+  /** Next exact due date (YYYY-MM-DD). Rolls forward when marked paid. */
+  next_due?: string | null;
+  last_paid?: string | null;
+  /** Account number or "ending in 1234". */
+  account?: string;
+  notes: string;
+}
+
+export type SubscriptionStatus = 'active' | 'confirm' | 'free_trial' | 'cancelling' | 'cancelled';
+
+export interface Subscription extends BaseRow {
+  name: string;
+  /** Catalog key (netflix, spotify…) when recognized, else ''. */
+  service: string;
+  category: string;
+  amount: number | null;
+  frequency: Frequency;
+  next_due: string | null;
+  status: SubscriptionStatus;
+  /** Where it was found: manual, email or statement. */
+  source: string;
+  payer_id: ID | null;
+  account_email: string;
+  /** Card or account it bills to, e.g. "Visa ••4821" or "Apple". */
+  pay_method: string;
+  cancel_url: string;
+  /** Put the renewal dates on the calendar. */
+  remind: boolean;
+  last_charged: string | null;
+  cancelled_on: string | null;
   notes: string;
 }
 
@@ -516,6 +546,7 @@ export interface TableMap {
   travel: TravelItem;
   utilities: Utility;
   bills: Bill;
+  subscriptions: Subscription;
   appointments: Appointment;
   incomes: Income;
   address_changes: AddressChange;
@@ -544,6 +575,7 @@ export const TABLES: TableName[] = [
   'utilities',
   'appointments',
   'bills',
+  'subscriptions',
   'incomes',
   'address_changes',
   'contacts',
