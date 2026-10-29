@@ -43,4 +43,6 @@ begin
   end;
 end $$;
 
+grant select, insert, update, delete on public.subscriptions to authenticated;
+
 notify pgrst, 'reload schema';

@@ -34,6 +34,12 @@ function SyncBadge({ dark }: { dark?: boolean }) {
       </span>
     );
   if (status.syncing) return <span className={base}>{dot("animate-pulse bg-sky-400")} Syncing…</span>;
+  if (status.behind.length)
+    return (
+      <Link href="/settings#cloud-update" className={base} title="Some changes can't reach your family until the cloud database is updated">
+        {dot("bg-amber-400")} Needs update
+      </Link>
+    );
   if (status.pending) return <span className={base}>{dot("bg-amber-400")} {status.pending} unsynced</span>;
   return <span className={base}>{dot("bg-emerald-400")} Synced</span>;
 }

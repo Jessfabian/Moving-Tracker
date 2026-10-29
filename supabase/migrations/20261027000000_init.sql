@@ -251,6 +251,10 @@ create table if not exists public.activity (
 create or replace function public.touch_server_updated_at()
 returns trigger language plpgsql as $$
 begin
+  -- An older copy of a row (for example one re-sent by a phone) must never overwrite a newer edit.
+  if tg_op = 'UPDATE' and new.updated_at < old.updated_at then
+    return old;
+  end if;
   new.server_updated_at := clock_timestamp();
   return new;
 end $$;

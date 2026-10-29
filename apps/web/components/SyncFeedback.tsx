@@ -129,8 +129,16 @@ export function PullToRefresh() {
       if (store.status.mode === "cloud") store.restartRealtime();
       await store.sync();
       setBusy(false);
-      setDone(store.status.mode !== "cloud" ? "Up to date" : store.status.error ? "Couldn't reach the cloud — try again" : "Up to date ✓");
-      setTimeout(() => setDone(null), 1800);
+      setDone(
+        store.status.mode !== "cloud"
+          ? "Up to date"
+          : store.status.error
+            ? "Couldn't reach the cloud — try again"
+            : store.status.behind.length
+              ? "Synced — some items need a database update (see Settings)"
+              : "Up to date ✓",
+      );
+      setTimeout(() => setDone(null), store.status.behind.length ? 3500 : 1800);
     };
     window.addEventListener("touchstart", onStart, { passive: true });
     window.addEventListener("touchmove", onMove, { passive: true });

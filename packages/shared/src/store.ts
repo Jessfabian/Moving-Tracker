@@ -16,12 +16,24 @@ export interface RemoteAdapter {
   pull(table: TableName, since: string | null): Promise<(BaseRow & { server_updated_at?: string })[]>;
   subscribe(onRow: (table: TableName, row: BaseRow) => void): () => void;
   uploadMedia?(ref: MediaRef): Promise<MediaRef>;
+  /** Fields of this table the cloud doesn't have yet, so they were left out of the upload. */
+  skippedColumns?(table: TableName): string[];
+}
+
+/** Part of the app the cloud database can't store yet (its update hasn't been run). No columns = the whole table. */
+export interface CloudGap {
+  table: TableName;
+  columns: string[];
 }
 
 export interface SyncStatus {
   mode: 'local' | 'cloud';
   syncing: boolean;
   pending: number;
+  /** Of `pending`, changes stuck because the cloud doesn't have their table yet. */
+  waiting: number;
+  /** What the cloud database is missing; empty when it's up to date. */
+  behind: CloudGap[];
   lastSync: string | null;
   error: string | null;
 }
@@ -55,6 +67,8 @@ export class MovingStore {
   private changeListeners = new Set<(e: ChangeEvent) => void>();
   /** Tables the cloud doesn't have yet; their changes stay on this device until the migration runs. */
   missingTables = new Set<TableName>();
+  /** Tables whose rows were uploaded without some fields; re-sent once the cloud has those fields. */
+  private repush = new Set<TableName>();
   private pending: PendingOp[] = [];
   private lastPulled: Partial<Record<TableName, string>> = {};
   private dirtyTables = new Set<TableName>();
@@ -70,7 +84,7 @@ export class MovingStore {
     private actor: () => string,
     private remote: RemoteAdapter | null = null,
   ) {
-    this.status = { mode: remote ? 'cloud' : 'local', syncing: false, pending: 0, lastSync: null, error: null };
+    this.status = { mode: remote ? 'cloud' : 'local', syncing: false, pending: 0, waiting: 0, behind: [], lastSync: null, error: null };
   }
 
   private key(suffix: string) {
@@ -87,6 +101,9 @@ export class MovingStore {
     const lp = await this.kv.getItem(this.key('_lastPulled'));
     this.lastPulled = lp ? JSON.parse(lp) : {};
     this.status.lastSync = (await this.kv.getItem(this.key('_lastSync'))) ?? null;
+    const rp = await this.kv.getItem(this.key('_repush'));
+    // Devices that synced before this existed may have uploaded rows without newer fields — check every table once.
+    this.repush = new Set(rp ? (JSON.parse(rp) as TableName[]) : this.status.lastSync ? TRACKED : []);
     this.status.pending = this.pending.length;
     this.loaded = true;
     this.emit();
@@ -119,8 +136,22 @@ export class MovingStore {
     const s = {} as Snapshot;
     for (const t of TABLES) (s as Record<string, BaseRow[]>)[t] = (this.db[t] as BaseRow[]).filter((r) => !r.deleted);
     this.snapshot = s;
-    this.status = { ...this.status, pending: this.pending.length };
+    this.status = { ...this.status, ...this.cloudGaps() };
     this.listeners.forEach((l) => l());
+  }
+
+  /** What the cloud can't store yet, and how many changes are stuck because of it. */
+  private cloudGaps(): Pick<SyncStatus, 'pending' | 'waiting' | 'behind'> {
+    const behind: CloudGap[] = [];
+    for (const t of TABLES) {
+      if (this.missingTables.has(t)) behind.push({ table: t, columns: [] });
+      else {
+        const cols = this.remote?.skippedColumns?.(t) ?? [];
+        if (cols.length) behind.push({ table: t, columns: cols });
+      }
+    }
+    const waiting = this.pending.filter((p) => this.missingTables.has(p.table)).length;
+    return { pending: this.pending.length, waiting, behind };
   }
 
   // ---------- CRUD ----------
@@ -307,8 +338,9 @@ export class MovingStore {
       await this.kv.removeItem(this.key(t));
       (this.db as Record<string, BaseRow[]>)[t] = [];
     }
-    for (const k of ['_pending', '_lastPulled', '_lastSync']) await this.kv.removeItem(this.key(k));
+    for (const k of ['_pending', '_lastPulled', '_lastSync', '_repush']) await this.kv.removeItem(this.key(k));
     this.pending = [];
+    this.repush.clear();
     this.lastPulled = {};
     this.emit();
   }
@@ -356,6 +388,7 @@ export class MovingStore {
         try {
           await remote.push(table, rows);
           this.missingTables.delete(table);
+          if (remote.skippedColumns?.(table).length) this.repush.add(table);
         } catch (e) {
           failedTables.add(table);
           fail(table, e);
@@ -385,11 +418,25 @@ export class MovingStore {
         }
         if (rows.length) this.dirtyTables.add(t);
       }
+
+      // Rows uploaded while the cloud lacked some fields: send them again in full now that it may have them.
+      // Runs after the pull, so this device already holds everyone's latest version of each row.
+      let resend = false;
+      for (const t of [...this.repush]) {
+        if (this.missingTables.has(t) || remote.skippedColumns?.(t).length) continue;
+        this.repush.delete(t);
+        for (const r of this.db[t] as BaseRow[]) {
+          if (!this.pending.some((p) => p.table === t && p.id === r.id)) this.pending.push({ table: t, id: r.id });
+          resend = true;
+        }
+      }
+      await this.kv.setItem(this.key('_repush'), JSON.stringify([...this.repush]));
       const ts = nowIso();
       await this.kv.setItem(this.key('_lastPulled'), JSON.stringify(this.lastPulled));
       await this.kv.setItem(this.key('_lastSync'), ts);
       await this.flushToDisk();
       this.status = { ...this.status, syncing: false, lastSync: ts, error: errors.length ? errors.join(' · ') : null };
+      if (resend) this.scheduleSave();
     } catch (e) {
       this.status = { ...this.status, syncing: false, error: e instanceof Error ? e.message : cloudErrorMessage(e) };
     }

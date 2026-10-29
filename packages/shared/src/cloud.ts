@@ -120,6 +120,7 @@ export function supabaseAdapter(
   // Required cloud columns that some on-device rows left blank — filled with the app default before upload.
   const required = new Map<string, Set<string>>();
   return {
+    skippedColumns: (table) => [...(missing.get(table) ?? [])],
     async push(table, rows) {
       const skip = missing.get(table) ?? new Set<string>();
       const fill = required.get(table) ?? new Set<string>();

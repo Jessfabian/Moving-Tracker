@@ -11,6 +11,7 @@ import { PageHeader, Toggle } from "@/components/ui";
 import { idbKV } from "@/lib/kv";
 import { usePrefs, useSystemDark } from "@/lib/prefs";
 import { useApp, useSyncStatus } from "@/lib/store-context";
+import { CloudUpdateNotice } from "@/components/CloudUpdate";
 
 export default function SettingsPage() {
   const app = useApp();
@@ -135,10 +136,16 @@ export default function SettingsPage() {
                 )}
                 {status && (
                   <p className="text-xs text-gray-500">
-                    Last sync: {status.lastSync ? new Date(status.lastSync).toLocaleString() : "never"} · {status.pending} pending changes
+                    Last sync: {status.lastSync ? new Date(status.lastSync).toLocaleString() : "never"} ·{" "}
+                    {status.pending === 0
+                      ? "everything uploaded"
+                      : status.waiting === status.pending
+                        ? `${status.pending} change${status.pending === 1 ? "" : "s"} waiting for the database update below`
+                        : `${status.pending} change${status.pending === 1 ? "" : "s"} still uploading`}
                     {status.error && <span className="text-red-600"> · {status.error}</span>}
                   </p>
                 )}
+                <CloudUpdateNotice />
                 <div className="flex flex-wrap gap-2">
                   <button className="btn-secondary" onClick={() => void store?.sync()}>
                     ⟳ Sync now

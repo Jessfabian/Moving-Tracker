@@ -99,6 +99,25 @@ await assert.rejects(as(C, () => db.query(`insert into storage.objects (bucket_i
 assert.equal((await as(C, () => db.query(`select * from storage.objects`))).rows.length, 0);
 assert.equal((await as(B, () => db.query(`select * from storage.objects`))).rows.length, 1);
 
+// An older copy of a row never overwrites a newer edit; a newer one does.
+const upsertTask = (title, ts) =>
+  as(A, () =>
+    db.query(
+      `insert into tasks (id, household_id, title, updated_at) values ($1, $2, $3, $4)
+       on conflict (id) do update set title = excluded.title, updated_at = excluded.updated_at`,
+      [taskId, hid, title, ts],
+    ),
+  );
+await upsertTask('stale copy', '2026-01-01T00:00:00.000Z');
+assert.equal((await as(A, () => one(`select title from tasks where id = $1`, [taskId]))).title, 'Book movers ✅');
+await upsertTask('newer edit', '2027-06-01T00:00:00.000Z');
+assert.equal((await as(A, () => one(`select title from tasks where id = $1`, [taskId]))).title, 'newer edit');
+
+// Subscriptions and the newer bill fields work for members.
+await as(A, () => db.query(`insert into subscriptions (id, household_id, name, amount) values (gen_random_uuid(), $1, 'Hulu', 9.99)`, [hid]));
+assert.equal((await as(B, () => db.query(`select name from subscriptions`))).rows[0].name, 'Hulu');
+await as(A, () => db.query(`insert into bills (id, household_id, name, next_due, account) values (gen_random_uuid(), $1, 'GEICO', '2026-11-03', '1234')`, [hid]));
+
 // Viewers cannot write.
 await db.query(`update household_members set role = 'viewer' where user_id = $1`, [B]);
 await assert.rejects(as(B, () => db.query(`insert into tasks (id, household_id, title) values (gen_random_uuid(), $1, 'x')`, [hid])), /row-level security/);
