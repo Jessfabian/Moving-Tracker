@@ -26,6 +26,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { EntityForm } from "@/components/EntityForm";
 import { MoneyImport } from "@/components/MoneyImport";
+import { InboxConnect } from "@/components/InboxConnect";
 import { BULK_BTN, BULK_DANGER, BULK_PRIMARY, SelectableRow, SelectActions, SelectBar, useBulkDelete, useBulkHide, useBulkUpdate, useSelection } from "@/components/Selection";
 import { Card, showUndo, useDeleteWithUndo, useHiddenRows } from "@/components/Swipe";
 import { Drawer } from "@/components/ui";
@@ -384,6 +385,7 @@ export default function BillsPage() {
         </Card>
 
         <aside className="space-y-4">
+          <InboxConnect id="bills.inbox" />
           <Card id="bills.due" title="Due in the next 30 days" icon="📅" summary={overdue.length ? `${overdue.length} overdue` : due.length ? `${due.length} bills` : undefined}>
             {due.length ? (
               <ul className="space-y-2">

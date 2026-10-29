@@ -17,6 +17,7 @@ import {
   type ParseResult,
 } from "@moving/shared";
 import { useState } from "react";
+import { applyFound } from "@/lib/inbox";
 import { useDb, useStore } from "@/lib/store-context";
 import { Drawer, Segmented } from "./ui";
 import { PickAll, SelectCircle } from "./Selection";
@@ -56,7 +57,8 @@ async function readFile(file: File): Promise<string> {
 }
 
 const EMAIL_HELP = [
-  "Search your inbox for words like receipt, subscription, renewal, “your plan” or “amount due”.",
+  "Easiest: close this and tap “Connect my email” under “My email” — the app then reads your inbox on its own.",
+  "Or search your inbox for words like receipt, subscription, renewal, “your plan” or “amount due”.",
   "Open an email, select all the text and copy it. Paste below — you can paste many emails one after another.",
   "Or save the emails as .eml files (on a computer: drag them out of the mail app) and upload them.",
 ];
@@ -121,75 +123,8 @@ export function MoneyImport({ open, onClose, focus = "subscriptions" }: { open: 
 
   const save = () => {
     if (!found) return;
-    let added = 0;
-    let updated = 0;
-    const source = mode === "email" ? "email" : "statement";
-    for (const s of found.subscriptions) {
-      if (!pick[`s:${s.key}`]) continue;
-      if (s.existingId) {
-        const cur = db.subscriptions?.find((x) => x.id === s.existingId);
-        store.update(
-          "subscriptions",
-          s.existingId,
-          {
-            ...(s.amount != null ? { amount: s.amount } : {}),
-            ...(s.next_due && (!cur?.next_due || s.next_due > cur.next_due) ? { next_due: s.next_due } : {}),
-            ...(s.last_charged && (!cur?.last_charged || s.last_charged > cur.last_charged) ? { last_charged: s.last_charged } : {}),
-            ...(s.pay_method && !cur?.pay_method ? { pay_method: s.pay_method } : {}),
-            ...(s.account_email && !cur?.account_email ? { account_email: s.account_email } : {}),
-          },
-          { silent: true },
-        );
-        updated++;
-      } else {
-        store.insert(
-          "subscriptions",
-          {
-            name: s.name,
-            service: s.service,
-            category: s.category,
-            amount: s.amount,
-            frequency: s.frequency,
-            next_due: s.next_due,
-            status: s.status,
-            source,
-            pay_method: s.pay_method,
-            account_email: s.account_email,
-            cancel_url: s.cancel_url,
-            last_charged: s.last_charged,
-            remind: true,
-            notes: [s.reason, s.doubleCharged ? "⚠️ Charged twice in one billing period — check with the company." : ""].filter(Boolean).join("\n"),
-          },
-          { silent: true },
-        );
-        added++;
-      }
-    }
-    for (const b of found.bills) {
-      if (!pick[`b:${b.key}`]) continue;
-      if (b.existingId) {
-        store.update(
-          "bills",
-          b.existingId,
-          {
-            ...(b.amount != null ? { amount: b.amount } : {}),
-            ...(b.next_due ? { next_due: b.next_due } : {}),
-            ...(b.due_day ? { due_day: b.due_day } : {}),
-            ...(b.account ? { account: b.account } : {}),
-          },
-          { silent: true },
-        );
-        updated++;
-      } else {
-        store.insert(
-          "bills",
-          { name: b.name, category: b.category, amount: b.amount, frequency: b.frequency, next_due: b.next_due, due_day: b.due_day, autopay: b.autopay, account: b.account, website: b.website, status: "active", notes: b.reason },
-          { silent: true },
-        );
-        added++;
-      }
-    }
-    setDone(`${added} added${updated ? `, ${updated} updated` : ""}.`);
+    const c = applyFound(found, db, store, mode === "email" ? "email" : "statement", { pick: (k, key) => !!pick[`${k}:${key}`] });
+    setDone(`${c.added} added${c.updated ? `, ${c.updated} updated` : ""}.`);
     setFound(null);
     setText("");
     setFiles([]);

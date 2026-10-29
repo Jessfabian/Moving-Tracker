@@ -624,12 +624,21 @@ function guessSubCategory(text: string): string {
 }
 
 export function parseEmails(text: string, today: string): ParseResult {
-  const emails = splitEmails(text);
+  return parseEmailList(splitEmails(text), today, false);
+}
+
+const RECEIPT_WORDS = /receipt|charged|billed|payment\s?(received|confirm|processed|successful)|invoice|renew(ed|al|s\s?on)|your\s?(plan|subscription|membership)|order\s?total|amount\s?paid|thanks?\s?(you\s?)?for\s?(your\s?)?(payment|subscrib)/i;
+
+/**
+ * Reads separate emails (e.g. pulled from a connected inbox). With `strict`, "not sure" subscriptions
+ * need a price and receipt wording, so newsletters that merely say "premium" or "upgrade" are skipped.
+ */
+export function parseEmailList(emails: string[], today: string, strict = true): ParseResult {
   const subs: FoundSubscription[] = [];
   const bills: FoundBill[] = [];
   for (const e of emails) {
     const r = parseEmail(e, today);
-    if (r.sub) subs.push(r.sub);
+    if (r.sub && !(strict && r.sub.confidence === 'unsure' && (r.sub.amount == null || !RECEIPT_WORDS.test(e)))) subs.push(r.sub);
     if (r.bill) bills.push(r.bill);
   }
   return { subscriptions: mergeFound(subs), bills: mergeBills(bills), scanned: emails.length };

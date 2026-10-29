@@ -21,6 +21,7 @@ import {
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { EntityForm } from "@/components/EntityForm";
+import { InboxConnect } from "@/components/InboxConnect";
 import { MoneyImport } from "@/components/MoneyImport";
 import { BULK_BTN, BULK_DANGER, BULK_PRIMARY, SelectableRow, SelectActions, SelectBar, useBulkDelete, useBulkHide, useBulkUpdate, useSelection, type Selection } from "@/components/Selection";
 import { Card, showUndo, useDeleteWithUndo, useHiddenRows } from "@/components/Swipe";
@@ -190,6 +191,8 @@ export default function SubscriptionsPage() {
         <Stat label="To confirm" value={sum.toConfirm} sub={sum.trials ? `${sum.trials} free trial${sum.trials === 1 ? "" : "s"}` : "from imports"} tone="bg-sky" />
         <Stat label="Saved / yr" value={formatMoney(sum.savedYearly)} sub="by cancelling" tone="bg-sage" />
       </div>
+
+      <InboxConnect id="subs.inbox" />
 
       {alerts.length > 0 && (
         <Card id="subs.alerts" title={`Heads up · ${alerts.length}`} icon="⚠️">

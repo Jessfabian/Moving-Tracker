@@ -7,9 +7,11 @@
  * and a bottom bar with the actions. After an action the affected rows are unchecked.
  */
 import type { TableName } from "@moving/shared";
-import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useStore } from "@/lib/store-context";
 import { showUndo, SwipeRow, useHiddenRows, type SwipeAction } from "./Swipe";
+import { useSheetFocus } from "./ui";
 
 export interface Selection {
   active: boolean;
@@ -205,25 +207,70 @@ export function PickAll({ count, total, onAll, onClear, noun = "item", className
   );
 }
 
-/** Bottom action bar while selecting. */
+/**
+ * Bottom toolbar while selecting (HIG Toolbars + Action sheets): a slim, solid bar docked to the
+ * bottom edge that only shows once something is picked — "3 books selected · Actions". Actions opens a
+ * sheet from the bottom, so the list stays readable instead of being covered by a big panel.
+ */
 export function SelectActions({ sel, children, summary, noun = "item" }: { sel: Selection; children: ReactNode; summary?: ReactNode; noun?: string }) {
-  if (!sel.active) return null;
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const close = useCallback(() => setOpen(false), []);
+  const show = open && sel.active && sel.count > 0;
+  useSheetFocus(show, close, ref);
+  if (!sel.active || !sel.count) return null;
+  const label = `${sel.count} ${noun}${sel.count === 1 ? "" : "s"} selected`;
   return (
-    <div className="sticky bottom-[calc(5.5rem+env(safe-area-inset-bottom))] z-30 mt-6 ink-panel space-y-2 rounded-3xl bg-ink p-3 text-white shadow-2xl lg:bottom-4">
-      <div className="px-1 text-sm">
-        {sel.count ? (
-          <>
+    <>
+      <div className="h-16" aria-hidden />
+      <div
+        className="fixed inset-x-[max(0.75rem,env(safe-area-inset-left))] bottom-[calc(5.25rem+env(safe-area-inset-bottom))] z-30 mx-auto max-w-xl short:right-[calc(4.5rem+env(safe-area-inset-right))] short:bottom-[max(0.75rem,env(safe-area-inset-bottom))] lg:bottom-4 lg:left-[18.5rem] lg:right-10"
+        role="toolbar"
+        aria-label={`Actions for ${label}`}
+      >
+        <div className="ink-panel animate-pop flex min-h-14 items-center gap-2 rounded-2xl bg-ink p-1.5 pl-4 text-white shadow-[0_12px_32px_-12px_rgba(0,0,0,0.6)]">
+          <span className="min-w-0 flex-1 truncate text-[15px]" aria-live="polite">
             <b>{sel.count}</b> {noun}
-            {sel.count === 1 ? "" : "s"} selected{summary}
-          </>
-        ) : (
-          <span className="text-white/70">Tap {noun}s to select them, or use Select All.</span>
-        )}
+            {sel.count === 1 ? "" : "s"} selected
+          </span>
+          <button type="button" className="min-h-11 shrink-0 rounded-xl bg-white px-4 text-[15px] font-semibold text-ink active:opacity-70" aria-haspopup="dialog" onClick={() => setOpen(true)}>
+            Actions
+          </button>
+        </div>
       </div>
-      <fieldset disabled={!sel.count} className="contents [&:disabled_button]:opacity-40 [&:disabled_select]:opacity-40">
-        {children}
-      </fieldset>
-    </div>
+      {show &&
+        createPortal(
+          <div className="fixed inset-0 z-[60] flex items-end justify-center" role="presentation">
+            <button type="button" aria-label="Close actions" tabIndex={-1} className="animate-fade absolute inset-0 bg-black/40" onClick={close} />
+            <div
+              ref={ref}
+              role="dialog"
+              aria-modal="true"
+              aria-label={label}
+              className="ink-panel animate-sheet relative w-full max-w-xl rounded-t-3xl bg-ink p-4 pb-[max(1rem,env(safe-area-inset-bottom))] text-white shadow-2xl"
+              onClickCapture={(e) => {
+                if ((e.target as HTMLElement).closest("button")) setTimeout(close, 0);
+              }}
+              onChangeCapture={(e) => {
+                if ((e.target as HTMLElement).tagName === "SELECT") setTimeout(close, 0);
+              }}
+            >
+              <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-white/25" aria-hidden />
+              <div className="mb-3 flex items-center gap-2">
+                <h2 data-sheet-title tabIndex={-1} className="min-w-0 flex-1 truncate text-[17px] font-semibold outline-none">
+                  {label}
+                  {summary}
+                </h2>
+                <button type="button" className="min-h-10 rounded-xl px-3 text-[15px] font-semibold text-white/80 active:bg-white/10" onClick={close}>
+                  Cancel
+                </button>
+              </div>
+              {children}
+            </div>
+          </div>,
+          document.body,
+        )}
+    </>
   );
 }
 

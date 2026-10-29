@@ -10,6 +10,7 @@ import {
   emptySnapshot,
   findRecurring,
   matchExisting,
+  parseEmailList,
   parseDateText,
   parseEmails,
   parseStatement,
@@ -242,5 +243,18 @@ describe('bill due dates', () => {
     expect(markBillPaid({ next_due: null, due_day: 20, frequency: 'monthly', autopay: false }, '2026-10-25').next_due).toBe('2026-11-20');
     // Due the 5th, paid early on Oct 25: covers Nov 5, next is Dec 5.
     expect(markBillPaid({ next_due: null, due_day: 5, frequency: 'monthly', autopay: false }, '2026-10-25').next_due).toBe('2026-12-05');
+  });
+});
+describe('parseEmailList (connected inbox)', () => {
+  const netflix = 'From: Netflix <info@account.netflix.com>\nSubject: Your Netflix receipt\nDate: Oct 3, 2026\n\nYour Standard plan $17.99 was charged. Next billing date: November 3, 2026';
+  const promo = 'From: Some Shop <deals@shop.com>\nSubject: Upgrade to a premium subscription!\nDate: Oct 4, 2026\n\nJoin our subscription club today and save.';
+  const unsureReceipt = 'From: Acme Cloud <billing@acme.io>\nSubject: Payment received\nDate: Oct 5, 2026\n\nThanks for your payment. Your subscription total: $9.00 billed monthly.';
+  it('keeps known services and real receipts, skips newsletters', () => {
+    const r = parseEmailList([netflix, promo, unsureReceipt], '2026-10-29');
+    const names = r.subscriptions.map((s) => s.name);
+    expect(names.some((n) => /netflix/i.test(n))).toBe(true);
+    expect(names.some((n) => /shop/i.test(n))).toBe(false);
+    expect(r.subscriptions.length).toBe(2);
+    expect(r.scanned).toBe(3);
   });
 });

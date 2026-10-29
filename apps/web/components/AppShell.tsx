@@ -9,6 +9,7 @@ import { ThemeController } from "@/lib/prefs";
 import { useApp, useDb, useSyncStatus } from "@/lib/store-context";
 import { CloudGate } from "./CloudGate";
 import { ConfirmHost } from "./ConfirmSheet";
+import { InboxAutoCheck } from "./InboxConnect";
 import { useSyncMoveDistance } from "./MoveDistance";
 import { MoreSheet } from "./MoreSheet";
 import { NamePrompt, PullToRefresh, SyncToaster } from "./SyncFeedback";
@@ -138,6 +139,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <ConfirmHost />
       <ThemeController />
       <PullToRefresh />
+      <InboxAutoCheck />
       <div className="flex min-h-screen">
         <aside className="sticky top-0 hidden h-screen w-[16.5rem] flex-none flex-col gap-6 ink-panel overflow-y-auto bg-ink px-4 py-5 text-white lg:flex [&>*]:flex-none">
           <div className="px-2">

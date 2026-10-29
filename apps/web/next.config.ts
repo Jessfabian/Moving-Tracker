@@ -12,6 +12,7 @@ const nextConfig: NextConfig = {
     },
   },
   images: { unoptimized: true },
+  serverExternalPackages: ["imapflow", "mailparser"],
   env: {
     NEXT_PUBLIC_BUILD_ID: (process.env.VERCEL_GIT_COMMIT_SHA || "dev").slice(0, 7),
     NEXT_PUBLIC_BUILD_TIME: new Date().toISOString(),
