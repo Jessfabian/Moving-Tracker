@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { DEFAULTS } from './schemas';
 import type { KV, RemoteAdapter } from './store';
 import type { BaseRow, MediaRef, TableName } from './types';
 import { TABLES } from './types';
@@ -68,6 +69,26 @@ export function missingColumn(error: { code?: string; message?: string }): strin
   return m ? m[1]! : null;
 }
 
+/** Postgres 'null value in column "format" of relation "books" violates not-null constraint' (23502) → "format". */
+export function notNullColumn(error: { code?: string; message?: string }): string | null {
+  const m = /null value in column "([^"]+)"/i.exec(error.message ?? '');
+  return m ? m[1]! : null;
+}
+
+/** Replaces blank values the cloud won't accept with the app's default for that column. */
+export function fillRequired(table: string, rows: Record<string, unknown>[], cols: Set<string>): Record<string, unknown>[] {
+  if (!cols.size) return rows;
+  const defaults = (DEFAULTS as unknown as Record<string, Record<string, unknown> | undefined>)[table] ?? {};
+  return rows.map((r) => {
+    let out = r;
+    for (const c of cols) {
+      if (r[c] != null) continue;
+      out = { ...out, [c]: defaults[c] ?? '' };
+    }
+    return out;
+  });
+}
+
 export function supabaseAdapter(
   sb: SupabaseClient,
   householdId: string,
@@ -75,13 +96,23 @@ export function supabaseAdapter(
 ): RemoteAdapter {
   // Columns the cloud database doesn't have yet (a newer app before its migration ran) — kept on-device only.
   const missing = new Map<string, Set<string>>();
+  // Required cloud columns that some on-device rows left blank — filled with the app default before upload.
+  const required = new Map<string, Set<string>>();
   return {
     async push(table, rows) {
       const skip = missing.get(table) ?? new Set<string>();
-      for (let attempt = 0; attempt < 8; attempt++) {
-        const body = skip.size ? rows.map((r) => Object.fromEntries(Object.entries(r).filter(([k]) => !skip.has(k)))) : rows;
+      const fill = required.get(table) ?? new Set<string>();
+      for (let attempt = 0; attempt < 12; attempt++) {
+        let body = fillRequired(table, rows as unknown as Record<string, unknown>[], fill);
+        if (skip.size) body = body.map((r) => Object.fromEntries(Object.entries(r).filter(([k]) => !skip.has(k))));
         const { error } = await sb.from(table).upsert(body as never[], { onConflict: 'id' });
         if (!error) return;
+        const nn = notNullColumn(error);
+        if (nn && !fill.has(nn)) {
+          fill.add(nn);
+          required.set(table, fill);
+          continue;
+        }
         const col = missingColumn(error);
         if (!col || skip.has(col)) throw new Error(`${table}: ${error.message}`);
         skip.add(col);
