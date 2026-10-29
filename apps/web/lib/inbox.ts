@@ -1,6 +1,6 @@
 "use client";
 
-import { htmlToText, matchExisting, parseEmailList, today, type MovingStore, type ParseResult, type Snapshot } from "@moving/shared";
+import { htmlToText, matchExisting, parseEmailList, subscriptionToBill, today, withEmailRefs, type EmailRef, type MovingStore, type ParseResult, type Snapshot, type Subscription } from "@moving/shared";
 
 export type InboxProvider = "gmail" | "icloud" | "yahoo" | "aol" | "imap" | "google" | "microsoft";
 
@@ -301,7 +301,7 @@ async function msToken(body: Record<string, string>): Promise<{ access_token: st
 
 export class NeedsSignIn extends Error {}
 
-const SUBJECT_WORDS = ["receipt", "subscription", "renew", "renewal", "membership", "invoice", "billing", "\"your plan\"", "payment", "bill", "statement", "\"amount due\"", "trial", "charged"];
+const SUBJECT_WORDS = ["receipt", "subscription", "renew", "renewal", "membership", "invoice", "billing", "\"your plan\"", "payment", "bill", "statement", "\"amount due\"", "trial", "charged", "policy", "premium", "autopay", "cancel", "canceled", "cancelled", "cancellation", "ended", "expired"];
 
 function cutoff(): Date {
   const d = new Date();
@@ -365,11 +365,11 @@ async function readGmail(a: InboxAccount): Promise<string[]> {
   const texts = await pool(ids.slice(0, 300), 10, async (id) => {
     const r = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=full`, { headers: auth });
     if (!r.ok) return "";
-    const m = (await r.json()) as { payload?: GmailPart; internalDate?: string };
+    const m = (await r.json()) as { payload?: GmailPart; internalDate?: string; labelIds?: string[] };
     const h = (n: string) => m.payload?.headers?.find((x) => x.name.toLowerCase() === n)?.value ?? "";
     const { plain, html } = m.payload ? gmailBody(m.payload) : { plain: "", html: "" };
     const body = plain.trim() || (html ? htmlToText(html) : "");
-    return [`From: ${h("from")}`, `To: ${h("to")}`, `Subject: ${h("subject")}`, `Date: ${h("date")}`, "", body].join("\n").slice(0, 6000);
+    return [`From: ${h("from")}`, `To: ${h("to")}`, `Subject: ${h("subject")}`, `Date: ${h("date")}`, ...(m.labelIds?.includes("SENT") ? ["Folder: Sent"] : []), "", body].join("\n").slice(0, 6000);
   });
   return texts.filter(Boolean).reverse();
 }
@@ -442,6 +442,9 @@ export interface ApplyCounts {
   updated: number;
   toConfirm: number;
   doubles: number;
+  bills: number;
+  cancelled: number;
+  moved: number;
 }
 
 const norm = (s: string) =>
@@ -455,7 +458,12 @@ const norm = (s: string) =>
  * (unsure ones land in "Is this a subscription?"). With `auto`, anything the user already removed —
  * e.g. tapped "Not a subscription" — stays removed, and already-cancelled finds aren't added.
  */
-export function applyFound(found: ParseResult, db: Snapshot, store: MovingStore, source: string, opts: { auto?: boolean; pick?: (kind: "s" | "b", key: string) => boolean } = {}): ApplyCounts {
+export function applyFound(found: ParseResult, db: Snapshot, store: MovingStore, source: string, opts: { auto?: boolean; pick?: (kind: "s" | "b", key: string) => boolean; inbox?: string } = {}): ApplyCounts {
+  const refs = (list?: EmailRef[]) => (list ?? []).map((r) => (opts.inbox ? { ...r, inbox: opts.inbox } : r));
+  const notesWith = (cur: string | null | undefined, list?: EmailRef[]) => {
+    const next = withEmailRefs(cur, refs(list));
+    return next !== (cur ?? "") ? { notes: next } : {};
+  };
   const res = matchExisting(found, db.subscriptions ?? [], db.bills);
   const removed = new Set(
     opts.auto
@@ -465,25 +473,45 @@ export function applyFound(found: ParseResult, db: Snapshot, store: MovingStore,
           .map((d) => `${d.table}:${norm(String((d.row as { name?: string }).name ?? ""))}`)
       : [],
   );
-  const counts: ApplyCounts = { added: 0, updated: 0, toConfirm: 0, doubles: 0 };
+  const counts: ApplyCounts = { added: 0, updated: 0, toConfirm: 0, doubles: 0, bills: 0, cancelled: 0, moved: 0 };
+  const billNames = new Set(db.bills.filter((x) => !x.deleted).map((x) => norm(x.name)));
   for (const s of res.subscriptions) {
     if (opts.pick && !opts.pick("s", s.key)) continue;
     if (s.existingId) {
       const cur = db.subscriptions?.find((x) => x.id === s.existingId);
+      const seen = s.cancelled_on ?? s.seen ?? "";
+      const staleNote = s.stale && s.last_charged ? `No receipt since ${s.last_charged} — is it still active?` : "";
+      const status: Partial<Subscription> =
+        s.status === "cancelled" && cur?.status !== "cancelled" && seen >= (cur?.last_charged ?? "")
+          ? { status: "cancelled", cancelled_on: s.cancelled_on ?? s.seen ?? today(), remind: false }
+          : s.status === "cancelling" && (cur?.status === "active" || cur?.status === "confirm" || cur?.status === "free_trial") && seen >= (cur?.last_charged ?? "")
+            ? { status: "cancelling" }
+            : cur?.status === "cancelled" && s.status !== "cancelled" && s.status !== "cancelling" && s.last_charged && s.last_charged > (cur.cancelled_on ?? "")
+              ? { status: "active", cancelled_on: null }
+              : staleNote && cur?.status === "active" && !(cur.last_charged && cur.last_charged > (s.last_charged ?? "")) && !(cur.notes ?? "").includes(staleNote)
+                ? { status: "confirm" }
+                : {};
+      const baseNotes = status.status === "confirm" ? [staleNote, cur?.notes ?? ""].filter(Boolean).join("\n") : cur?.notes;
       const patch = {
         ...(s.amount != null && s.amount !== cur?.amount ? { amount: s.amount } : {}),
         ...(s.next_due && (!cur?.next_due || s.next_due > cur.next_due) ? { next_due: s.next_due } : {}),
         ...(s.last_charged && (!cur?.last_charged || s.last_charged > cur.last_charged) ? { last_charged: s.last_charged } : {}),
         ...(s.pay_method && !cur?.pay_method ? { pay_method: s.pay_method } : {}),
         ...(s.account_email && !cur?.account_email ? { account_email: s.account_email } : {}),
+        ...status,
+        ...(status.status === "confirm" ? { notes: withEmailRefs(baseNotes, refs(s.emails)) } : notesWith(cur?.notes, s.emails)),
       };
       if (Object.keys(patch).length) {
         store.update("subscriptions", s.existingId, patch, { silent: true });
         counts.updated++;
+        if (status.status === "cancelled" || status.status === "cancelling") counts.cancelled++;
+        if (status.status === "confirm") counts.toConfirm++;
       }
       continue;
     }
-    if (opts.auto && (removed.has(`subscriptions:${norm(s.name)}`) || s.status === "cancelled")) continue;
+    // Already tracked as a bill (e.g. the user moved car insurance over) — leave it there.
+    if (billNames.has(norm(s.name))) continue;
+    if (opts.auto && (removed.has(`subscriptions:${norm(s.name)}`) || s.status === "cancelled" || (s.status === "cancelling" && !s.charges.length))) continue;
     store.insert(
       "subscriptions",
       {
@@ -500,7 +528,7 @@ export function applyFound(found: ParseResult, db: Snapshot, store: MovingStore,
         cancel_url: s.cancel_url,
         last_charged: s.last_charged,
         remind: true,
-        notes: [s.reason, s.doubleCharged ? "⚠️ Charged twice in one billing period — check with the company." : ""].filter(Boolean).join("\n"),
+        notes: withEmailRefs([s.reason, s.doubleCharged ? "⚠️ Charged twice in one billing period — check with the company." : ""].filter(Boolean).join("\n"), refs(s.emails)),
       },
       { silent: true },
     );
@@ -517,6 +545,7 @@ export function applyFound(found: ParseResult, db: Snapshot, store: MovingStore,
         ...(b.next_due && (!cur?.next_due || b.next_due > cur.next_due) ? { next_due: b.next_due } : {}),
         ...(b.due_day && !cur?.due_day ? { due_day: b.due_day } : {}),
         ...(b.account && !cur?.account ? { account: b.account } : {}),
+        ...notesWith(cur?.notes, b.emails),
       };
       if (Object.keys(patch).length) {
         store.update("bills", b.existingId, patch, { silent: true });
@@ -525,27 +554,40 @@ export function applyFound(found: ParseResult, db: Snapshot, store: MovingStore,
       continue;
     }
     if (opts.auto && removed.has(`bills:${norm(b.name)}`)) continue;
-    store.insert(
-      "bills",
-      { name: b.name, category: b.category, amount: b.amount, frequency: b.frequency, next_due: b.next_due, due_day: b.due_day, autopay: b.autopay, account: b.account, website: b.website, status: "active", notes: b.reason },
-      { silent: true },
-    );
+    // An earlier scan filed it as a subscription (e.g. GEICO "policy renewal") — move it over.
+    const misfiled = (db.subscriptions ?? []).find((x) => !x.deleted && x.source !== "manual" && norm(x.name) === norm(b.name));
+    const fields = { name: b.name, category: b.category, amount: b.amount, frequency: b.frequency, next_due: b.next_due, due_day: b.due_day, autopay: b.autopay, account: b.account, website: b.website, status: "active" as const };
+    if (misfiled) {
+      const moved = subscriptionToBill(misfiled);
+      store.insert("bills", { ...moved, ...Object.fromEntries(Object.entries(fields).filter(([, v]) => v != null && v !== "")), notes: withEmailRefs(moved.notes, refs(b.emails)) }, { silent: true });
+      store.remove("subscriptions", misfiled.id);
+      counts.moved++;
+      continue;
+    }
+    store.insert("bills", { ...fields, notes: withEmailRefs(b.reason, refs(b.emails)) }, { silent: true });
     counts.added++;
+    counts.bills++;
   }
   return counts;
 }
 
 export function describeCounts(c: ApplyCounts, scanned: number): string {
-  if (!c.added && !c.updated) return `Checked ${scanned} email${scanned === 1 ? "" : "s"} — nothing new.`;
-  const parts = [c.added ? `${c.added} new` : "", c.updated ? `${c.updated} updated` : "", c.toConfirm ? `${c.toConfirm} to confirm` : ""].filter(Boolean);
+  if (!c.added && !c.updated && !c.moved) return `Checked ${scanned} email${scanned === 1 ? "" : "s"} — nothing new.`;
+  const parts = [
+    c.added ? `${c.added} new${c.bills ? ` (${c.bills} bill${c.bills === 1 ? "" : "s"})` : ""}` : "",
+    c.updated ? `${c.updated} updated` : "",
+    c.cancelled ? `${c.cancelled} cancelled` : "",
+    c.moved ? `${c.moved} moved to Bills` : "",
+    c.toConfirm ? `${c.toConfirm} to confirm` : "",
+  ].filter(Boolean);
   return `${parts.join(", ")}${c.doubles ? " · ⚠️ possible double charge" : ""}`;
 }
 
 /** Reads one inbox and saves what it finds. */
 export async function checkInbox(a: InboxAccount, store: MovingStore): Promise<{ counts: ApplyCounts; scanned: number; text: string }> {
   const emails = await readInbox(a);
-  const found = parseEmailList(emails, today());
-  const counts = applyFound(found, store.getSnapshot(), store, "inbox", { auto: true });
+  const found = parseEmailList(emails, today(), true, a.email);
+  const counts = applyFound(found, store.getSnapshot(), store, "inbox", { auto: true, inbox: a.email });
   const text = describeCounts(counts, emails.length);
   patchAccount(a.id, { lastScan: new Date().toISOString(), lastResult: text });
   return { counts, scanned: emails.length, text };

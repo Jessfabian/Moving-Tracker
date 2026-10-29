@@ -238,7 +238,7 @@ export function parseDateText(text: string, fallbackYear?: number): string | nul
   }
   m = /(?:^|[^\d/])(\d{1,2})\/(\d{1,2})(?![\d/])/.exec(text);
   if (m && fallbackYear && validDate(fallbackYear, +m[1]!, +m[2]!)) return iso(fallbackYear, +m[1]!, +m[2]!);
-  m = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s*(20\d{2})?/i.exec(text);
+  m = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?!\d)(?:st|nd|rd|th)?,?\s*(20\d{2})?/i.exec(text);
   if (m) {
     const y = m[3] ? +m[3] : fallbackYear;
     const mo = MONTHS.indexOf(m[1]!.toLowerCase()) + 1;
@@ -403,6 +403,88 @@ export function subscriptionAlerts(subs: Subscription[], today: string): Subscri
 
 // ---------- reading emails ----------
 
+/** The email something was found in, so the user can go back and find it. */
+export interface EmailRef {
+  from: string;
+  address: string;
+  subject: string;
+  date: string | null;
+  /** The connected inbox it was read from. */
+  inbox?: string;
+}
+
+const NOTES_MARK = '📧 Found in email:';
+
+function emailRefOf(text: string, fy: number): EmailRef | null {
+  const m = /^from:\s*"?([^"<\n]*?)"?\s*(?:<([^>\n]+)>)?\s*$/im.exec(text);
+  const subject = (/^subject:\s*(.+)$/im.exec(text)?.[1] ?? '').trim();
+  if (!m && !subject) return null;
+  let from = m?.[1]?.trim() ?? '';
+  let address = m?.[2]?.trim() ?? '';
+  if (!address && /@/.test(from)) [address, from] = [from, ''];
+  const sent = /^(?:date|sent):\s*(.+)$/im.exec(text)?.[1];
+  return { from, address, subject, date: sent ? parseDateText(sent, fy) : null };
+}
+
+const emailRefs = (text: string, fy: number) => {
+  const r = emailRefOf(text, fy);
+  return r ? [r] : [];
+};
+
+function mergeRefs(a: EmailRef[] = [], b: EmailRef[] = [], keep = 3): EmailRef[] {
+  const seen = new Set<string>();
+  return [...a, ...b]
+    .filter((r) => {
+      const k = `${r.address || r.from}|${r.subject}|${r.date ?? ''}`.toLowerCase();
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    })
+    .sort((x, y) => (y.date ?? '').localeCompare(x.date ?? ''))
+    .slice(0, keep);
+}
+
+const refLine = (r: EmailRef) =>
+  `• ${r.date ?? 'no date'} — ${[r.from, r.address ? `<${r.address}>` : ''].filter(Boolean).join(' ') || 'unknown sender'} — “${r.subject.replace(/[“”]/g, '"')}”${r.inbox ? ` · inbox ${r.inbox}` : ''}`;
+
+/** Splits notes into the user's own text and the "found in email" references we saved. */
+export function readEmailRefs(notes: string | null | undefined): { refs: EmailRef[]; rest: string } {
+  const text = notes ?? '';
+  const i = text.indexOf(NOTES_MARK);
+  if (i < 0) return { refs: [], rest: text };
+  const after = text.slice(i + NOTES_MARK.length).split('\n');
+  const refs: EmailRef[] = [];
+  let n = 1;
+  for (; n < after.length; n++) {
+    const m = /^•\s*(\S+(?: date)?)\s+—\s+(.*?)\s+—\s+“(.*)”(?:\s+·\s+inbox\s+(\S+))?\s*$/.exec(after[n]!.trim());
+    if (!m) break;
+    const who = /^(.*?)\s*<([^>]+)>$/.exec(m[2]!);
+    refs.push({
+      date: m[1] === 'no date' ? null : m[1]!,
+      from: who ? who[1]! : m[2] === 'unknown sender' ? '' : m[2]!,
+      address: who ? who[2]! : '',
+      subject: m[3]!,
+      ...(m[4] ? { inbox: m[4] } : {}),
+    });
+  }
+  const rest = [text.slice(0, i).trim(), after.slice(n).join('\n').trim()].filter(Boolean).join('\n');
+  return { refs, rest };
+}
+
+/** Adds email references to notes (keeps the newest 3, no duplicates). Returns the notes unchanged if nothing new. */
+export function withEmailRefs(notes: string | null | undefined, add: EmailRef[] = []): string {
+  const { refs, rest } = readEmailRefs(notes);
+  const merged = mergeRefs(refs, add);
+  if (!add.length || merged.map(refLine).join('\n') === refs.map(refLine).join('\n')) return notes ?? '';
+  return [rest, `${NOTES_MARK}\n${merged.map(refLine).join('\n')}`].filter(Boolean).join('\n\n');
+}
+
+/** A search the user can paste into their mail app to find the email. */
+export function emailSearch(r: EmailRef): string {
+  const subj = r.subject.replace(/^(re|fwd?):\s*/i, '').replace(/"/g, '').slice(0, 60);
+  return [r.address ? `from:${r.address}` : r.from ? `from:"${r.from}"` : '', subj ? `subject:"${subj}"` : ''].filter(Boolean).join(' ');
+}
+
 export interface FoundSubscription {
   /** Stable key used to merge charges from many emails / statements. */
   key: string;
@@ -425,6 +507,15 @@ export interface FoundSubscription {
   doubleCharged?: boolean;
   /** Matches an existing subscription (id) — import updates it instead of adding. */
   existingId?: string;
+  /** The emails it was found in (newest first). */
+  emails?: EmailRef[];
+  /** Date of the newest email about it. */
+  seen?: string | null;
+  cancelled_on?: string | null;
+  /** Came from a message the user sent (cancel request). */
+  sent?: boolean;
+  /** No receipt for over two billing periods — may not be active anymore. */
+  stale?: boolean;
 }
 
 export interface FoundBill {
@@ -440,6 +531,7 @@ export interface FoundBill {
   website: string;
   reason: string;
   existingId?: string;
+  emails?: EmailRef[];
 }
 
 export interface ParseResult {
@@ -543,16 +635,20 @@ const cardIn = (text: string) => {
 const emailIn = (text: string) => /^to:\s*.*?([\w.+-]+@[\w-]+\.[\w.]+)/im.exec(text)?.[1] ?? '';
 
 /** Reads one email (receipt, renewal notice, bill) and returns what it describes. */
-export function parseEmail(raw: string, today: string): { sub?: FoundSubscription; bill?: FoundBill } {
+export function parseEmail(raw: string, today: string, me = ''): { sub?: FoundSubscription; bill?: FoundBill } {
   const text = htmlToText(raw);
   const subject = /^subject:\s*(.+)$/im.exec(text)?.[1] ?? '';
   const fy = yearOf(text) ?? +today.slice(0, 4);
+  if (sentByMe(raw, me)) return parseSentEmail(raw, text, subject, fy);
   const service = findService(`${subject}\n${senderName(text) ?? ''}`) ?? findService(text.slice(0, 1500));
-  const biller = service ? undefined : findBiller(`${subject}\n${senderName(text) ?? ''}\n${text.slice(0, 800)}`);
+  // A bill company in the sender or subject (GEICO, Spectrum, Atmos…) means it's a bill even when the
+  // email says "premium" or "renewal" — insurance and utilities aren't subscriptions.
+  const headBiller = service ? undefined : findBiller(`${subject}\n${senderName(text) ?? ''}`);
+  const biller = headBiller ?? (service ? undefined : findBiller(`${subject}\n${senderName(text) ?? ''}\n${text.slice(0, 800)}`));
   const isBill = !service && BILL_WORDS.test(text) && !SUB_WORDS.test(subject);
 
-  if (isBill || (biller && !SUB_WORDS.test(text))) {
-    const amount = amountNear(text, /amount\s?due|total\s?(amount\s?)?due|balance\s?due|new\s?balance|statement\s?balance|payment\s?amount|total\s?due|amount\s?of/i) ?? moneyIn(text)[0] ?? null;
+  if (isBill || (headBiller && /policy|premium|insurance|payment|statement|invoice|auto-?pay|renewal|amount|due|bill/i.test(text)) || (biller && !SUB_WORDS.test(text))) {
+    const amount = amountNear(text, /amount\s?due|total\s?(amount\s?)?due|balance\s?due|new\s?balance|statement\s?balance|payment\s?amount|total\s?due|amount\s?of|premium|installment/i) ?? moneyIn(text)[0] ?? null;
     const dueLine = lineNear(text, /due\s?(date|by|on)|pay\s?by|payment\s?due|scheduled\s?(for|on)|will\s?be\s?(drafted|debited|paid)/i);
     const next_due = (dueLine && parseDateText(dueLine.replace(/^[^:]*?(due|by|on|for)\b/i, ''), fy)) ?? (dueLine && parseDateText(dueLine, fy)) ?? null;
     const name = biller && !/^(Rent|Mortgage|Electric|Water|Gas|Trash|Phone|Internet|Insurance|Credit card)$/.test(senderName(text) ?? '') ? (senderName(text) ?? biller.name) : (senderName(text) ?? biller?.name ?? (subject || 'Bill'));
@@ -570,21 +666,22 @@ export function parseEmail(raw: string, today: string): { sub?: FoundSubscriptio
         autopay: /auto-?pay|automatic\s?payment|will\s?be\s?(drafted|debited)|scheduled\s?payment/i.test(text) && !/not\s?(enrolled|set\s?up)\s?(in|for)\s?auto/i.test(text),
         account: accountIn(text) ? `Ending in ${accountIn(text)}` : '',
         website: '',
+        emails: emailRefs(raw, fy),
         reason: 'From a bill email',
       },
     };
   }
 
-  const cancelled = /(has\s?been|was|is\s?now)\s?(cancel+ed|ended)|cancel+ation\s?(confirm|complete)|sorry\s?to\s?see\s?you\s?go/i.test(text);
+  const cancelled = CANCELLED_WORDS.test(text);
   const trial = /free\s?trial/i.test(text);
-  const looksLikeSub = !!service || SUB_WORDS.test(text);
+  const looksLikeSub = !!service || SUB_WORDS.test(text) || (cancelled && !!senderName(text));
   if (!looksLikeSub) return {};
   const name = service?.name ?? (senderName(text) || subject.replace(/^(re|fwd?):\s*/i, '').slice(0, 40) || 'Subscription');
   const amount = amountNear(text, /total|charged|amount|price|billed|renew|plan|per\s?month|\/mo|subtotal/i) ?? moneyIn(text)[0] ?? null;
   const renewLine = lineNear(text, /next\s?(billing|payment|charge|renewal)|renew(s|al)?\s?(on|date)|will\s?(renew|be\s?charged|bill)|billing\s?date|trial\s?ends?|ends\s?on|until/i);
   const next_due = renewLine ? parseDateText(renewLine, fy) : null;
-  const sentDate = /^(?:date|sent):\s*(.+)$/im.exec(text)?.[1];
-  const charged = sentDate ? parseDateText(sentDate, fy) : null;
+  const seen = emailDate(text, fy);
+  const charged = cancelled ? null : seen;
   const freq = frequencyIn(renewLine ?? '') ?? frequencyIn(text) ?? service?.frequency ?? 'monthly';
   const sure = !!service || (/subscription|membership/i.test(text) && amount != null);
   return {
@@ -593,17 +690,72 @@ export function parseEmail(raw: string, today: string): { sub?: FoundSubscriptio
       name,
       service: service?.key ?? '',
       category: service?.category ?? guessSubCategory(text),
-      amount,
+      amount: cancelled ? null : amount,
       frequency: freq,
-      next_due: next_due ?? (charged ? addPeriod(charged, freq) : null),
+      next_due: cancelled ? null : (next_due ?? (charged ? addPeriod(charged, freq) : null)),
       last_charged: charged,
+      seen,
+      cancelled_on: cancelled ? seen : null,
       status: cancelled ? 'cancelled' : trial && !amount ? 'free_trial' : sure ? 'active' : 'confirm',
       cancel_url: service?.cancel ?? '',
       pay_method: cardIn(text),
       account_email: emailIn(text),
-      confidence: sure ? 'sure' : 'unsure',
-      reason: service ? `Recognized ${service.name} email` : 'Email mentions a subscription — is this one?',
-      charges: amount ? [{ date: charged, amount, text: subject || name }] : [],
+      confidence: sure || cancelled ? 'sure' : 'unsure',
+      reason: cancelled ? `Cancellation email from ${name}` : service ? `Recognized ${service.name} email` : 'Email mentions a subscription — is this one?',
+      charges: amount && !cancelled ? [{ date: charged, amount, text: subject || name }] : [],
+      emails: emailRefs(raw, fy),
+    },
+  };
+}
+
+const CANCELLED_WORDS = /(has\s?been|have\s?been|was|is\s?now|been\s?successfully)\s?(cancel+ed|ended|terminated)|cancel+ation\s?(confirm|complete|processed|request\s?received)|sorry\s?to\s?see\s?you\s?go|you(['’]ve|\s?have)\s?(cancel+ed|unsubscribed)|subscription\s?(has\s?)?(ended|expired)|membership\s?(has\s?)?(ended|expired)|won['’]?t\s?be\s?(charged|billed)\s?again/i;
+const CANCEL_REQUEST = /\bcancel+(ing|ation)?\b|\bterminate\b|\bunsubscribe\b|end\s?my\s?(subscription|membership|account|plan)|close\s?my\s?account|stop\s?(billing|charging)/i;
+
+function emailDate(text: string, fy: number): string | null {
+  const d = /^(?:date|sent):\s*(.+)$/im.exec(text)?.[1];
+  return d ? parseDateText(d, fy) : null;
+}
+
+/** True when the email came from the inbox owner (their Sent folder). */
+function sentByMe(text: string, me: string): boolean {
+  if (/^folder:\s*sent/im.test(text)) return true;
+  if (!me) return false;
+  const from = /^from:\s*(.+)$/im.exec(text)?.[1] ?? '';
+  return from.toLowerCase().includes(me.toLowerCase());
+}
+
+/** A message the user sent asking a company to cancel — marks that subscription "cancel requested". */
+function parseSentEmail(raw: string, text: string, subject: string, fy: number): { sub?: FoundSubscription } {
+  if (!CANCEL_REQUEST.test(`${subject}\n${text.slice(0, 1500)}`)) return {};
+  const to = /^to:\s*(.+)$/im.exec(raw)?.[1] ?? '';
+  // Notes to friends and family ("can you cancel Netflix?") aren't cancel requests.
+  if (!to || /@(gmail|googlemail|yahoo|ymail|outlook|hotmail|live|msn|icloud|me|mac|aol|proton|protonmail|comcast|att)\.[a-z.]+/i.test(to)) return {};
+  const service = findService(`${subject}\n${to}`) ?? findService(text.slice(0, 1500));
+  const toName = senderName(`From: ${to.split(',')[0] ?? ''}`);
+  const name = service?.name ?? toName;
+  if (!name || findBiller(`${subject}\n${to}`)) return {};
+  const seen = emailDate(text, fy);
+  return {
+    sub: {
+      key: service ? service.key : `name:${normName(name)}`,
+      name,
+      service: service?.key ?? '',
+      category: service?.category ?? guessSubCategory(text),
+      amount: null,
+      frequency: service?.frequency ?? 'monthly',
+      next_due: null,
+      last_charged: null,
+      seen,
+      cancelled_on: null,
+      status: 'cancelling',
+      cancel_url: service?.cancel ?? '',
+      pay_method: '',
+      account_email: '',
+      confidence: 'sure',
+      reason: `You emailed ${name} to cancel`,
+      charges: [],
+      sent: true,
+      emails: emailRefs(raw, fy),
     },
   };
 }
@@ -633,35 +785,72 @@ const RECEIPT_WORDS = /receipt|charged|billed|payment\s?(received|confirm|proces
  * Reads separate emails (e.g. pulled from a connected inbox). With `strict`, "not sure" subscriptions
  * need a price and receipt wording, so newsletters that merely say "premium" or "upgrade" are skipped.
  */
-export function parseEmailList(emails: string[], today: string, strict = true): ParseResult {
+export function parseEmailList(emails: string[], today: string, strict = true, me = ''): ParseResult {
   const subs: FoundSubscription[] = [];
   const bills: FoundBill[] = [];
   for (const e of emails) {
-    const r = parseEmail(e, today);
+    const r = parseEmail(e, today, me);
     if (r.sub && !(strict && r.sub.confidence === 'unsure' && (r.sub.amount == null || !RECEIPT_WORDS.test(e)))) subs.push(r.sub);
     if (r.bill) bills.push(r.bill);
   }
-  return { subscriptions: mergeFound(subs), bills: mergeBills(bills), scanned: emails.length };
+  return { subscriptions: markStale(mergeFound(subs), today), bills: mergeBills(bills), scanned: emails.length };
 }
+
+/** Flags live subscriptions whose newest receipt is more than two billing periods old. */
+function markStale(list: FoundSubscription[], today: string): FoundSubscription[] {
+  for (const x of list) {
+    if (x.status !== 'active' || !x.last_charged) continue;
+    const overdue = daysBetween(addPeriod(addPeriod(x.last_charged, x.frequency), x.frequency), today);
+    if (overdue <= 10) continue;
+    x.stale = true;
+    x.status = 'confirm';
+    x.reason = `No receipt since ${x.last_charged} — is it still active?`;
+  }
+  return list;
+}
+
+const seenOf = (x: FoundSubscription) => x.seen ?? x.last_charged ?? x.next_due ?? '';
 
 function mergeFound(list: FoundSubscription[]): FoundSubscription[] {
   const map = new Map<string, FoundSubscription>();
-  for (const x of list) {
+  for (const x of [...list].sort((a, b) => seenOf(a).localeCompare(seenOf(b)))) {
     const prev = map.get(x.key);
     if (!prev) {
       map.set(x.key, { ...x, charges: [...x.charges] });
       continue;
     }
     prev.charges.push(...x.charges);
-    const newer = (x.last_charged ?? x.next_due ?? '') >= (prev.last_charged ?? prev.next_due ?? '');
-    if (newer) {
+    prev.emails = mergeRefs(prev.emails, x.emails);
+    if (x.last_charged && (!prev.last_charged || x.last_charged > prev.last_charged)) prev.last_charged = x.last_charged;
+    prev.seen = seenOf(x) > seenOf(prev) ? seenOf(x) : seenOf(prev);
+    // Emails are in date order, so the newest one decides: a receipt after a cancellation means re-subscribed.
+    if (x.status === 'cancelled') {
+      prev.status = 'cancelled';
+      prev.cancelled_on = x.cancelled_on;
+      prev.next_due = null;
+      prev.reason = x.reason;
+    } else if (x.status === 'cancelling') {
+      if (prev.status !== 'cancelled') {
+        prev.status = 'cancelling';
+        prev.reason = x.reason;
+      }
+    } else {
       prev.amount = x.amount ?? prev.amount;
       prev.next_due = x.next_due ?? prev.next_due;
-      prev.last_charged = x.last_charged ?? prev.last_charged;
-      if (x.status === 'cancelled') prev.status = 'cancelled';
+      if (prev.status === 'cancelled' || prev.status === 'cancelling') {
+        if (x.charges.length) {
+          prev.status = x.status === 'confirm' ? 'active' : x.status;
+          prev.cancelled_on = null;
+          prev.reason = x.reason;
+        }
+      } else if (x.status === 'free_trial' || prev.status === 'free_trial') prev.status = x.status === 'confirm' ? prev.status : x.status;
     }
+    prev.service ||= x.service;
+    if (prev.category === 'other') prev.category = x.category;
+    prev.cancel_url ||= x.cancel_url;
     prev.pay_method ||= x.pay_method;
     prev.account_email ||= x.account_email;
+    prev.sent = prev.sent && x.sent;
     if (x.confidence === 'sure') {
       prev.confidence = 'sure';
       if (prev.status === 'confirm') prev.status = 'active';
@@ -674,9 +863,58 @@ function mergeBills(list: FoundBill[]): FoundBill[] {
   const map = new Map<string, FoundBill>();
   for (const x of list) {
     const prev = map.get(x.key);
-    if (!prev || (x.next_due ?? '') >= (prev.next_due ?? '')) map.set(x.key, { ...prev, ...x, account: x.account || prev?.account || '' });
+    if (!prev || (x.next_due ?? '') >= (prev.next_due ?? '')) map.set(x.key, { ...prev, ...x, account: x.account || prev?.account || '', emails: mergeRefs(prev?.emails, x.emails) });
+    else prev.emails = mergeRefs(prev.emails, x.emails);
   }
   return [...map.values()];
+}
+
+// ---------- moving between subscriptions and bills ----------
+
+const BILL_CATS = ['housing', 'utilities', 'internet_phone', 'insurance', 'transportation', 'debt', 'childcare', 'health', 'food', 'pets', 'savings'];
+const SUB_CATS = ['entertainment', 'music', 'gaming', 'design_tools', 'software', 'cloud', 'finance', 'fitness', 'food', 'shopping', 'news', 'education', 'health', 'security', 'kids', 'pets'];
+
+/** The bill fields for a subscription the user says is really a bill (e.g. car insurance). */
+export function subscriptionToBill(s: Pick<Subscription, 'name' | 'category' | 'amount' | 'frequency' | 'next_due' | 'last_charged' | 'payer_id' | 'pay_method' | 'cancel_url' | 'notes'>) {
+  const category = findBiller(s.name)?.category ?? (BILL_CATS.includes(s.category) ? s.category : 'other');
+  return {
+    name: s.name,
+    category,
+    amount: s.amount,
+    frequency: s.frequency === 'weekly' ? ('monthly' as Frequency) : s.frequency,
+    next_due: s.next_due,
+    due_day: s.next_due ? +s.next_due.slice(8, 10) : null,
+    last_paid: s.last_charged,
+    autopay: !!s.pay_method,
+    status: 'active' as const,
+    payer_id: s.payer_id,
+    website: s.cancel_url && !/cancel/i.test(s.cancel_url) ? s.cancel_url : '',
+    account: s.pay_method ?? '',
+    notes: s.notes ?? '',
+  };
+}
+
+/** The subscription fields for a bill the user says is really a subscription. */
+export function billToSubscription(b: Pick<Bill, 'name' | 'category' | 'amount' | 'frequency' | 'next_due' | 'last_paid' | 'payer_id' | 'account' | 'website' | 'notes' | 'status'>) {
+  const service = findService(b.name);
+  return {
+    name: b.name,
+    service: service?.key ?? '',
+    category: service?.category ?? (SUB_CATS.includes(b.category) ? b.category : 'other'),
+    amount: b.amount,
+    frequency: b.frequency,
+    next_due: b.next_due ?? null,
+    last_charged: b.last_paid ?? null,
+    status: (b.status === 'cancel_before_move' ? 'cancelling' : 'active') as Subscription['status'],
+    source: 'manual',
+    payer_id: b.payer_id,
+    account_email: '',
+    pay_method: b.account ?? '',
+    cancel_url: service?.cancel ?? '',
+    remind: true,
+    cancelled_on: null,
+    notes: b.notes ?? '',
+  };
 }
 
 // ---------- reading bank / card statements ----------

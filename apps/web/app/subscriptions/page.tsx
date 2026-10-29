@@ -11,6 +11,7 @@ import {
   formatDate,
   formatMoney,
   optionLabel,
+  readEmailRefs,
   rollForward,
   subscriptionAlerts,
   subscriptionCost,
@@ -20,13 +21,15 @@ import {
 } from "@moving/shared";
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { EmailSource, notesText } from "@/components/EmailSource";
 import { EntityForm } from "@/components/EntityForm";
 import { InboxConnect } from "@/components/InboxConnect";
 import { MoneyImport } from "@/components/MoneyImport";
 import { BULK_BTN, BULK_DANGER, BULK_PRIMARY, SelectableRow, SelectActions, SelectBar, useBulkDelete, useBulkHide, useBulkUpdate, useSelection, type Selection } from "@/components/Selection";
-import { Card, showUndo, useDeleteWithUndo, useHiddenRows } from "@/components/Swipe";
+import { Card, showUndo, SwipeRow, useDeleteWithUndo, useHiddenRows } from "@/components/Swipe";
 import { Drawer, PageHeader, Stat } from "@/components/ui";
 import { useDb, useStore } from "@/lib/store-context";
+import { useMoveRecords } from "@/lib/moveRecords";
 
 const CAT_COLORS: Record<string, string> = {
   entertainment: "#e50914",
@@ -95,7 +98,7 @@ export default function SubscriptionsPage() {
   const live = visible.filter((x) => x.status !== "confirm" && x.status !== "cancelled" && (!cat || x.category === cat));
   const cancelled = visible.filter((x) => x.status === "cancelled");
   const groups = SUB_CATEGORIES.map((c) => ({ ...c, rows: live.filter((x) => x.category === c.value).sort((a, b) => subscriptionCost(b).monthly - subscriptionCost(a).monthly) })).filter((g) => g.rows.length);
-  const nextUp = subs
+  const nextUp = visible
     .filter((x) => x.status === "active" || x.status === "free_trial")
     .map((x) => ({ x, date: rollForward(x.next_due, x.frequency, t) }))
     .filter((d): d is { x: Subscription; date: string } => !!d.date && daysBetween(t, d.date) <= 31)
@@ -113,6 +116,11 @@ export default function SubscriptionsPage() {
   const confirmUpdate = useBulkUpdate<Subscription>("subscriptions", confirmSel, "subscription");
   const confirmDelete = useBulkDelete("subscriptions", confirmSel, "subscription");
   const confirmHide = useBulkHide("subscriptions", confirmSel, nameOf, "subscription");
+  const move = useMoveRecords();
+  const moveSelected = (s: Selection) => {
+    move.toBills(subs.filter((x) => s.has(x.id)));
+    s.done();
+  };
 
   const actions = (x: Subscription) => [
     {
@@ -243,6 +251,9 @@ export default function SubscriptionsPage() {
                   <button type="button" className="btn-secondary" onClick={() => del("subscriptions", x.id, `“${x.name}”`)}>
                     Not a subscription
                   </button>
+                  <button type="button" className="btn-ghost col-span-2 min-h-11 text-sm" onClick={() => move.toBills([x])}>
+                    📄 It&apos;s a bill — move to Bills
+                  </button>
                 </div>
               </div>
                 </SelectableRow>
@@ -256,6 +267,9 @@ export default function SubscriptionsPage() {
               </button>
               <button type="button" className={BULK_BTN} onClick={confirmHide}>
                 🙈 Hide
+              </button>
+              <button type="button" className={BULK_BTN} onClick={() => moveSelected(confirmSel)}>
+                📄 Move to Bills
               </button>
               <button type="button" className={BULK_DANGER} onClick={confirmDelete}>
                 🗑 Not subscriptions
@@ -349,6 +363,9 @@ export default function SubscriptionsPage() {
               <button type="button" className={BULK_BTN} onClick={bulkHide}>
                 🙈 Hide
               </button>
+              <button type="button" className={BULK_BTN} onClick={() => moveSelected(sel)}>
+                📄 Move to Bills
+              </button>
               <button type="button" className={BULK_DANGER} onClick={bulkDelete}>
                 🗑 Delete
               </button>
@@ -362,7 +379,8 @@ export default function SubscriptionsPage() {
               <ul className="space-y-2">
                 {nextUp.slice(0, 10).map(({ x, date }) => (
                   <li key={x.id}>
-                    <button type="button" className="flex w-full items-center gap-3 text-left" onClick={() => setViewing(x.id)}>
+                    <SwipeRow actions={actions(x)} label={x.name} radius="rounded-xl">
+                    <button type="button" className="flex w-full items-center gap-3 rounded-xl bg-white text-left" onClick={() => setViewing(x.id)}>
                       <span className="flex h-11 w-11 flex-none flex-col items-center justify-center rounded-xl bg-gray-100">
                         <span className="text-[9px] text-gray-500 uppercase">{formatDate(date, { month: "short" })}</span>
                         <span className="font-display text-lg leading-none font-bold">{Number(date.slice(8))}</span>
@@ -373,6 +391,7 @@ export default function SubscriptionsPage() {
                         <span className={daysBetween(t, date) <= 3 ? "font-semibold text-accent" : "text-gray-400"}>{dueText(date, t)}</span>
                       </span>
                     </button>
+                    </SwipeRow>
                   </li>
                 ))}
               </ul>
@@ -448,7 +467,7 @@ export default function SubscriptionsPage() {
                   ["Billed to", current.pay_method],
                   ["Account", current.account_email],
                   ["Whose", db.family_members.find((m) => m.id === current.payer_id)?.name ?? ""],
-                  ["Found in", current.source === "statement" ? "bank statement" : current.source === "email" ? "email" : "added by hand"],
+                  ["Found in", current.source === "statement" ? "bank statement" : current.source === "inbox" ? (readEmailRefs(current.notes).refs[0]?.inbox ?? "your inbox") : current.source === "email" ? "pasted email" : "added by hand"],
                   ["Cancelled", current.cancelled_on ? formatDate(current.cancelled_on) : ""],
                 ] as [string, string][]
               )
@@ -460,7 +479,8 @@ export default function SubscriptionsPage() {
                   </div>
                 ))}
             </dl>
-            {current.notes && <p className="rounded-2xl bg-ink/5 p-3 text-sm whitespace-pre-wrap text-gray-600">{current.notes}</p>}
+            <EmailSource notes={current.notes} />
+            {notesText(current.notes) && <p className="rounded-2xl bg-ink/5 p-3 text-sm whitespace-pre-wrap text-gray-600">{notesText(current.notes)}</p>}
 
             {current.status === "confirm" && (
               <div className="grid grid-cols-2 gap-2">
@@ -536,6 +556,16 @@ export default function SubscriptionsPage() {
                 Charged — move to next renewal
               </button>
             )}
+            <button
+              type="button"
+              className="btn-secondary w-full"
+              onClick={() => {
+                setViewing(null);
+                move.toBills([current]);
+              }}
+            >
+              📄 This is a bill — move to Bills
+            </button>
             <div className="sheet-footer sticky bottom-0 -mx-5 flex gap-2 border-t border-gray-200 bg-paper px-5 py-3">
               <button
                 type="button"

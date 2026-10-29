@@ -28,9 +28,11 @@ import { EntityForm } from "@/components/EntityForm";
 import { MoneyImport } from "@/components/MoneyImport";
 import { InboxConnect } from "@/components/InboxConnect";
 import { BULK_BTN, BULK_DANGER, BULK_PRIMARY, SelectableRow, SelectActions, SelectBar, useBulkDelete, useBulkHide, useBulkUpdate, useSelection } from "@/components/Selection";
-import { Card, showUndo, useDeleteWithUndo, useHiddenRows } from "@/components/Swipe";
+import { EmailSource } from "@/components/EmailSource";
+import { Card, showUndo, SwipeRow, useDeleteWithUndo, useHiddenRows } from "@/components/Swipe";
 import { Drawer } from "@/components/ui";
 import { useDb, useStore } from "@/lib/store-context";
+import { useMoveRecords } from "@/lib/moveRecords";
 
 const CAT_COLORS: Record<string, string> = {
   housing: "#ff5a1f",
@@ -125,6 +127,7 @@ export default function BillsPage() {
     { label: "Delete", icon: "🗑", tone: "danger" as const, onClick: () => del(table, id, `“${label}”`) },
   ];
   const billSel = useSelection(tab === "bills" ? bills.map((b) => b.id) : []);
+  const move = useMoveRecords();
   const incSel = useSelection(tab === "income" ? incomes.map((i) => i.id) : []);
   const sel = tab === "bills" ? billSel : incSel;
   const noun = tab === "bills" ? "bill" : "income";
@@ -349,6 +352,16 @@ export default function BillsPage() {
                 <button type="button" className={BULK_BTN} onClick={billHide}>
                   🙈 Hide
                 </button>
+                <button
+                  type="button"
+                  className={BULK_BTN}
+                  onClick={() => {
+                    move.toSubscriptions(bills.filter((b) => billSel.has(b.id)));
+                    billSel.done();
+                  }}
+                >
+                  🔁 Move to Subscriptions
+                </button>
                 <button type="button" className={BULK_DANGER} onClick={billDelete}>
                   🗑 Delete
                 </button>
@@ -390,7 +403,9 @@ export default function BillsPage() {
             {due.length ? (
               <ul className="space-y-2">
                 {due.slice(0, 10).map(({ bill, d }) => (
-                  <li key={bill.id} className="flex items-center gap-3">
+                  <li key={bill.id}>
+                    <SwipeRow actions={rowActions("bills", bill.id, bill.name)} label={bill.name} radius="rounded-xl">
+                    <div className="flex items-center gap-3 rounded-xl bg-white">
                     <span className={`flex h-11 w-11 flex-none flex-col items-center justify-center rounded-xl ${d.overdue ? "bg-red-100 text-red-700" : "bg-gray-100"}`}>
                       <span className="text-[9px] uppercase opacity-70">{formatDate(d.date, { month: "short" })}</span>
                       <span className="font-display text-lg leading-none font-bold">{Number(d.date.slice(8))}</span>
@@ -407,6 +422,8 @@ export default function BillsPage() {
                         Paid ✓
                       </button>
                     )}
+                    </div>
+                    </SwipeRow>
                   </li>
                 ))}
               </ul>
@@ -458,7 +475,25 @@ export default function BillsPage() {
       </div>
 
       <Drawer open={!!editing} onClose={() => setEditing(null)} title={editing ? (editing.row ? (editing.table === "bills" ? editing.row.name : editing.row.source) : editing.table === "bills" ? "New bill" : "New income") : ""}>
-        {editing?.table === "bills" && <EntityForm key={editing.row?.id ?? "new-bill"} table="bills" row={editing.row} onDone={() => setEditing(null)} />}
+        {editing?.table === "bills" && editing.row && (
+          <div className="mb-4">
+            <EmailSource notes={editing.row.notes} />
+          </div>
+        )}
+        {editing?.table === "bills" && <EntityForm key={editing.row?.id ?? "new-bill"} table="bills" row={editing.row}         onDone={() => setEditing(null)} />}
+        {editing?.table === "bills" && editing.row && (
+          <button
+            type="button"
+            className="btn-secondary mt-4 w-full"
+            onClick={() => {
+              const row = editing.row as Bill;
+              setEditing(null);
+              move.toSubscriptions([row]);
+            }}
+          >
+            🔁 This is a subscription — move to Subscriptions
+          </button>
+        )}
         {editing?.table === "incomes" && <EntityForm key={editing.row?.id ?? "new-income"} table="incomes" row={editing.row} onDone={() => setEditing(null)} />}
       </Drawer>
       <MoneyImport open={importing} onClose={() => setImporting(false)} focus="bills" />

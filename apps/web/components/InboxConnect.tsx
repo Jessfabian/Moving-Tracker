@@ -66,7 +66,7 @@ export function InboxConnect({ id = "inbox" }: { id?: string }) {
 
   const check = async (a: InboxAccount) => {
     setBusy(a.id);
-    setMsg((m) => ({ ...m, [a.id]: { text: "Reading receipts and bills…" } }));
+    setMsg((m) => ({ ...m, [a.id]: { text: "Reading receipts, bills and cancellations…" } }));
     try {
       const r = await checkInbox(a, store);
       setMsg((m) => ({ ...m, [a.id]: { text: r.text } }));
@@ -113,7 +113,7 @@ export function InboxConnect({ id = "inbox" }: { id?: string }) {
           {accounts.length ? "Connect another email" : "Connect my email"}
         </button>
         {accounts.length > 0 && <Toggle checked={auto} onChange={setAutoCheck} label="Check automatically" description="When you open the app, if it's been 12 hours since the last check." />}
-        <p className="text-xs text-gray-500">Only receipts, renewals and bills from the last 12 months are read. Nothing is sent or deleted, and your password stays on this phone.</p>
+        <p className="text-xs text-gray-500">It looks through every folder, including Sent, for receipts, renewals, bills and cancellations from the last 12 months — so it can tell what you&apos;ve cancelled and what&apos;s still charging you. Nothing is sent or deleted, and your password stays on this phone.</p>
       </div>
       <ConnectSheet
         open={adding || !!retry}

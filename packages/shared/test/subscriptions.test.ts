@@ -16,7 +16,12 @@ import {
   parseStatement,
   parseStatementText,
   rollForward,
+  readEmailRefs,
+  withEmailRefs,
+  emailSearch,
   subscriptionAlerts,
+  subscriptionToBill,
+  billToSubscription,
   subscriptionSummary,
   upcomingBills,
   type Subscription,
@@ -57,6 +62,7 @@ describe('dates', () => {
     expect(parseDateText('due 11/05/26')).toBe('2026-11-05');
     expect(parseDateText('2026-12-01')).toBe('2026-12-01');
     expect(parseDateText('15 Dec 2026')).toBe('2026-12-15');
+    expect(parseDateText('Thu, 15 Oct 2026 10:00:00 GMT')).toBe('2026-10-15');
   });
   it('adds billing periods and rolls past dates forward', () => {
     expect(addPeriod('2026-01-31', 'monthly')).toBe('2026-02-28');
@@ -256,5 +262,117 @@ describe('parseEmailList (connected inbox)', () => {
     expect(names.some((n) => /shop/i.test(n))).toBe(false);
     expect(r.subscriptions.length).toBe(2);
     expect(r.scanned).toBe(3);
+  });
+});
+describe('email source', () => {
+  const mail = (date: string) => `From: "Netflix" <info@mailer.netflix.com>
+To: jess@gmail.com
+Subject: Your Netflix receipt
+Date: ${date}
+
+Your subscription renewed. Total $17.99. Next billing date Nov 30, 2026.`;
+
+  it('remembers the emails a subscription came from and saves them in notes', () => {
+    const r = parseEmailList([mail('Oct 1, 2026'), mail('Sep 1, 2026')], TODAY);
+    const s = r.subscriptions[0]!;
+    expect(s.emails).toHaveLength(2);
+    expect(s.emails![0]).toMatchObject({ from: 'Netflix', address: 'info@mailer.netflix.com', subject: 'Your Netflix receipt', date: '2026-10-01' });
+
+    const notes = withEmailRefs('Recognized Netflix email', s.emails!.map((e) => ({ ...e, inbox: 'jess@gmail.com' })));
+    const back = readEmailRefs(notes);
+    expect(back.rest).toBe('Recognized Netflix email');
+    expect(back.refs).toEqual([
+      { from: 'Netflix', address: 'info@mailer.netflix.com', subject: 'Your Netflix receipt', date: '2026-10-01', inbox: 'jess@gmail.com' },
+      { from: 'Netflix', address: 'info@mailer.netflix.com', subject: 'Your Netflix receipt', date: '2026-09-01', inbox: 'jess@gmail.com' },
+    ]);
+    // Same emails again: notes stay the same; user text after the block is kept.
+    expect(withEmailRefs(notes, back.refs)).toBe(notes);
+    const edited = `${notes}\nShared with mom`;
+    expect(readEmailRefs(edited).rest).toBe('Recognized Netflix email\nShared with mom');
+    expect(emailSearch(back.refs[0]!)).toBe('from:info@mailer.netflix.com subject:"Your Netflix receipt"');
+  });
+
+  it('keeps only the newest three', () => {
+    const refs = ['2026-01-01', '2026-02-01', '2026-03-01', '2026-04-01'].map((date) => ({ from: 'Hulu', address: '', subject: 'Receipt', date }));
+    expect(readEmailRefs(withEmailRefs('', refs)).refs.map((r) => r.date)).toEqual(['2026-04-01', '2026-03-01', '2026-02-01']);
+  });
+});
+
+describe('bills vs subscriptions, cancellations and sent mail', () => {
+  const ME = 'jess@example.com';
+  it('files GEICO policy renewals as bills, not subscriptions', () => {
+    const r = parseEmailList(
+      ['From: GEICO <noreply@geico.com>\nTo: jess@example.com\nSubject: Your policy renewal and premium\nDate: Mon, 5 Oct 2026 08:00:00 GMT\n\nYour auto policy renews soon. Premium amount due: $642.10 due by November 3, 2026.'],
+      TODAY,
+      true,
+      ME,
+    );
+    expect(r.subscriptions).toHaveLength(0);
+    expect(r.bills).toHaveLength(1);
+    expect(r.bills[0]!.name).toBe('GEICO');
+    expect(r.bills[0]!.category).toBe('insurance');
+    expect(r.bills[0]!.amount).toBe(642.1);
+  });
+
+  it('marks a subscription cancelled from a cancellation email newer than the last receipt', () => {
+    const r = parseEmailList(
+      [
+        'From: Hulu <billing@hulu.com>\nSubject: Your Hulu receipt\nDate: Thu, 3 Sep 2026 10:00:00 GMT\n\nYou were charged $17.99 for your monthly subscription.',
+        'From: Hulu <account@hulu.com>\nSubject: Your subscription has been cancelled\nDate: Sat, 12 Sep 2026 10:00:00 GMT\n\nWe are sorry to see you go. Your subscription has been cancelled.',
+      ],
+      TODAY,
+      true,
+      ME,
+    );
+    const hulu = r.subscriptions.find((x) => x.name === 'Hulu')!;
+    expect(hulu.status).toBe('cancelled');
+    expect(hulu.cancelled_on).toBe('2026-09-12');
+    expect(hulu.last_charged).toBe('2026-09-03');
+  });
+
+  it('treats a receipt after a cancellation as re-subscribed', () => {
+    const r = parseEmailList(
+      [
+        'From: Hulu <account@hulu.com>\nSubject: Your subscription has been cancelled\nDate: Sat, 12 Sep 2026 10:00:00 GMT\n\nYour subscription has been cancelled.',
+        'From: Hulu <billing@hulu.com>\nSubject: Your Hulu receipt\nDate: Sat, 10 Oct 2026 10:00:00 GMT\n\nYou were charged $17.99 for your monthly subscription.',
+      ],
+      TODAY,
+      true,
+      ME,
+    );
+    expect(r.subscriptions[0]!.status).toBe('active');
+    expect(r.subscriptions[0]!.cancelled_on).toBeNull();
+  });
+
+  it('reads cancel requests the user sent, but not notes to family', () => {
+    const r = parseEmailList(
+      [
+        'From: Jess <jess@example.com>\nTo: Planet Fitness <members@planetfitness.com>\nSubject: Please cancel my membership\nDate: Fri, 2 Oct 2026 10:00:00 GMT\n\nHi, please cancel my membership, we are moving.',
+        'From: Jess <jess@example.com>\nTo: Mike <mike@gmail.com>\nSubject: cancel netflix?\nDate: Fri, 2 Oct 2026 11:00:00 GMT\n\nShould we cancel Netflix before the move?',
+      ],
+      TODAY,
+      true,
+      ME,
+    );
+    expect(r.subscriptions).toHaveLength(1);
+    expect(r.subscriptions[0]!.status).toBe('cancelling');
+    expect(r.subscriptions[0]!.sent).toBe(true);
+  });
+
+  it('asks to confirm subscriptions with no receipt for over two billing periods', () => {
+    const r = parseEmailList(['From: Spotify <no-reply@spotify.com>\nSubject: Your Spotify receipt\nDate: Mon, 1 Jun 2026 10:00:00 GMT\n\nYou were charged $11.99 for Spotify Premium monthly.'], TODAY, true, ME);
+    expect(r.subscriptions[0]!.stale).toBe(true);
+    expect(r.subscriptions[0]!.status).toBe('confirm');
+    expect(r.subscriptions[0]!.reason).toContain('still active');
+  });
+
+  it('converts between subscriptions and bills', () => {
+    const b = subscriptionToBill(sub({ name: 'GEICO', category: 'finance', amount: 120, frequency: 'monthly', next_due: '2026-11-15', notes: 'x' }));
+    expect(b.category).toBe('insurance');
+    expect(b.due_day).toBe(15);
+    expect(b.notes).toBe('x');
+    const s = billToSubscription({ ...b, last_paid: null, name: 'Netflix', category: 'other', status: 'active' });
+    expect(s.service).toBe('netflix');
+    expect(s.category).toBe('entertainment');
   });
 });

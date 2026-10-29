@@ -8,9 +8,10 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
-const SUBJECT_WORDS = ["receipt", "subscription", "renew", "membership", "invoice", "billing", "your plan", "payment", "bill", "statement", "amount due", "trial", "charged", "order confirmation"];
-const MAX_MESSAGES = 250;
+const SUBJECT_WORDS = ["receipt", "subscription", "renew", "membership", "invoice", "billing", "your plan", "payment", "bill", "statement", "amount due", "trial", "charged", "order confirmation", "policy", "premium", "autopay", "cancel", "cancellation", "ended", "expired"];
+const MAX_MESSAGES = 300;
 const MAX_CHARS = 6000;
+const SKIP_USES = new Set(["\\Trash", "\\Junk", "\\Drafts", "\\Flagged", "\\Important"]);
 
 function privateAddress(ip: string): boolean {
   if (ip === "::1" || ip.startsWith("fe80:") || ip.startsWith("fc") || ip.startsWith("fd")) return true;
@@ -65,9 +66,17 @@ export async function POST(req: Request) {
     await client.connect();
     const boxes = await client.list();
     const all = boxes.find((b) => b.specialUse === "\\All");
-    const archive = boxes.find((b) => b.specialUse === "\\Archive");
-    const paths = all ? [all.path] : ["INBOX", ...(archive ? [archive.path] : [])];
+    const sent = boxes.find((b) => b.specialUse === "\\Sent") ?? boxes.find((b) => /^(inbox[./])?sent(\s?(items|mail|messages))?$/i.test(b.path));
+    const rank = (b: { path: string; specialUse?: string }) => (b.path.toUpperCase() === "INBOX" ? 0 : b.path === sent?.path ? 1 : b.specialUse === "\\Archive" ? 2 : 3);
+    // Every real folder (Inbox first, then Sent, Archive and the user's own folders) — not Trash, Spam or Drafts.
+    const folders = boxes
+      .filter((b) => !b.flags?.has("\\Noselect") && !b.flags?.has("\\NonExistent") && !SKIP_USES.has(b.specialUse ?? "") && !/^(trash|junk|spam|drafts?|deleted( items| messages)?|bulk mail|outbox)$/i.test(b.name))
+      .sort((a, b) => rank(a) - rank(b))
+      .map((b) => b.path);
+    // Gmail's "All Mail" already holds every label, including Sent.
+    const paths = all ? [all.path] : folders;
     const gmail = client.capabilities.has("X-GM-EXT-1");
+    const perFolder = paths.length > 1 ? Math.max(40, Math.floor(MAX_MESSAGES / Math.min(paths.length, 6))) : MAX_MESSAGES;
 
     const emails: { date: number; text: string }[] = [];
     for (const path of paths) {
@@ -78,8 +87,9 @@ export async function POST(req: Request) {
           ? { gmraw: `newer_than:${months}m subject:(${SUBJECT_WORDS.map((w) => (w.includes(" ") ? `"${w}"` : w)).join(" OR ")})` }
           : { since, or: SUBJECT_WORDS.map((w) => ({ subject: w })) };
         const found = await client.search(query, { uid: true });
-        const uids = (Array.isArray(found) ? found : []).slice(-(MAX_MESSAGES - emails.length));
+        const uids = (Array.isArray(found) ? found : []).slice(-Math.min(perFolder, MAX_MESSAGES - emails.length));
         if (!uids.length) continue;
+        const isSent = path === sent?.path;
         for await (const msg of client.fetch(uids, { uid: true, source: { maxLength: 60_000 } }, { uid: true })) {
           if (!msg.source) continue;
           try {
@@ -87,9 +97,10 @@ export async function POST(req: Request) {
             const text = (p.text?.trim() || (typeof p.html === "string" ? htmlToText(p.html) : "")).replace(/\n{3,}/g, "\n\n");
             const date = p.date ?? new Date();
             if (date < since) continue;
+            const fromMe = isSent || (p.from?.value ?? []).some((a) => a.address?.toLowerCase() === user.toLowerCase());
             emails.push({
               date: date.getTime(),
-              text: [`From: ${p.from?.text ?? ""}`, `To: ${Array.isArray(p.to) ? p.to.map((t) => t.text).join(", ") : (p.to?.text ?? "")}`, `Subject: ${p.subject ?? ""}`, `Date: ${date.toUTCString()}`, "", text].join("\n").slice(0, MAX_CHARS),
+              text: [`From: ${p.from?.text ?? ""}`, `To: ${Array.isArray(p.to) ? p.to.map((t) => t.text).join(", ") : (p.to?.text ?? "")}`, `Subject: ${p.subject ?? ""}`, `Date: ${date.toUTCString()}`, ...(fromMe ? ["Folder: Sent"] : []), "", text].join("\n").slice(0, MAX_CHARS),
             });
           } catch {
             // Skip messages that can't be parsed.
