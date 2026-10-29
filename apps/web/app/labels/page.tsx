@@ -1,9 +1,10 @@
 "use client";
 
 import { GroupToggle, SelectBar, useSelection } from "@/components/Selection";
+import { Card } from "@/components/Swipe";
 import { buildLabelSheet, DEFAULT_LABEL_OPTIONS, LABEL_SIZES, nextBoxNumber, roomCode, type LabelOptions } from "@moving/shared";
 import { useEffect, useMemo, useState } from "react";
-import { PageHeader, Segmented } from "@/components/ui";
+import { PageHeader, Segmented, Toggle } from "@/components/ui";
 import { printHtml } from "@/lib/media";
 import { useDb, useStore } from "@/lib/store-context";
 
@@ -18,23 +19,6 @@ function loadOpts(): LabelOptions {
   } catch {
     return DEFAULT_LABEL_OPTIONS;
   }
-}
-
-function Toggle({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <label className="flex cursor-pointer items-center justify-between gap-3 py-1 text-sm">
-      <span>{label}</span>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={value}
-        onClick={() => onChange(!value)}
-        className={`relative h-6 w-11 flex-none rounded-full transition ${value ? "bg-indigo-600" : "bg-slate-300"}`}
-      >
-        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${value ? "left-[22px]" : "left-0.5"}`} />
-      </button>
-    </label>
-  );
 }
 
 function QuickCreate({ onCreated }: { onCreated: (ids: string[]) => void }) {
@@ -77,11 +61,8 @@ function QuickCreate({ onCreated }: { onCreated: (ids: string[]) => void }) {
   const canCreate = roomId === NEW ? !!newName.trim() : !!roomId;
 
   return (
-    <div className="card space-y-3">
-      <div>
-        <div className="text-sm font-bold">⚡ Quick-create boxes</div>
-        <div className="muted">Make a batch of numbered boxes for a room, then print their labels.</div>
-      </div>
+    <Card id="labels-quick-create" title="Quick-create boxes" icon="⚡" bodyClassName="mt-3 space-y-3">
+      <div className="muted">Make a batch of numbered boxes for a room, then print their labels.</div>
       <div className="grid grid-cols-2 gap-2">
         <div className="col-span-2">
           <span className="label">Room</span>
@@ -130,14 +111,14 @@ function QuickCreate({ onCreated }: { onCreated: (ids: string[]) => void }) {
         </div>
       </div>
       <div className="flex flex-wrap gap-4">
-        <Toggle label="Fragile" value={fragile} onChange={setFragile} />
-        <Toggle label="Open first" value={openFirst} onChange={setOpenFirst} />
+        <Toggle className="text-sm" label="Fragile" checked={fragile} onChange={setFragile} />
+        <Toggle className="text-sm" label="Open first" checked={openFirst} onChange={setOpenFirst} />
       </div>
       <button className="btn-primary w-full" disabled={!canCreate} onClick={create}>
         Create {count} box{count === 1 ? "" : "es"}
         {room ? ` for ${room.name}` : roomId === NEW && newName.trim() ? ` for ${newName.trim()}` : ""}
       </button>
-    </div>
+    </Card>
   );
 }
 
@@ -195,8 +176,7 @@ export default function LabelsPage() {
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
         <div className="space-y-4 md:grid md:grid-cols-2 md:gap-4 md:space-y-0 xl:block xl:space-y-4">
-          <div className="card space-y-3">
-            <div className="text-sm font-bold">1 · Pick boxes</div>
+          <Card id="labels-pick" title="1 · Pick boxes" summary={`${ids.length} picked`} bodyClassName="mt-3 space-y-3">
             <div className="flex flex-wrap gap-1.5">
               <button className={`chip border ${roomFilter === "all" ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-200 bg-white text-slate-700"}`} onClick={() => setRoomFilter("all")}>
                 All rooms
@@ -254,10 +234,9 @@ export default function LabelsPage() {
                 );
               })}
             </div>
-          </div>
+          </Card>
 
-          <div className="card space-y-3">
-            <div className="text-sm font-bold">2 · Label style</div>
+          <Card id="labels-style" title="2 · Label style" summary={size.label} bodyClassName="mt-3 space-y-3">
             <div>
               <span className="label">Label stock</span>
               <select className="input" value={opts.size} onChange={(e) => set("size", e.target.value as LabelOptions["size"])}>
@@ -294,26 +273,31 @@ export default function LabelsPage() {
               />
             </div>
             <div className="divide-y divide-slate-100">
-              <Toggle label="Room color band" value={opts.colorBand} onChange={(v) => set("colorBand", v)} />
-              <Toggle label="Show contents" value={opts.showContents} onChange={(v) => set("showContents", v)} />
-              <Toggle label="Show “from” room" value={opts.showFromRoom} onChange={(v) => set("showFromRoom", v)} />
-              <Toggle label="Fragile / open-first flags" value={opts.showFlags} onChange={(v) => set("showFlags", v)} />
+              <Toggle className="text-sm" label="Room color band" checked={opts.colorBand} onChange={(v) => set("colorBand", v)} />
+              <Toggle className="text-sm" label="Show contents" checked={opts.showContents} onChange={(v) => set("showContents", v)} />
+              <Toggle className="text-sm" label="Show “from” room" checked={opts.showFromRoom} onChange={(v) => set("showFromRoom", v)} />
+              <Toggle className="text-sm" label="Fragile / open-first flags" checked={opts.showFlags} onChange={(v) => set("showFlags", v)} />
             </div>
-          </div>
+          </Card>
 
           <QuickCreate onCreated={(newIds) => sel.setMany(newIds, true)} />
         </div>
 
-        <div className="card flex min-h-[520px] flex-col overflow-hidden p-0 xl:sticky xl:top-4 xl:h-[calc(100vh-2rem)] xl:self-start">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
-            <div className="text-sm font-bold">3 · Preview</div>
+        <Card
+          id="labels-preview"
+          title="3 · Preview"
+          summary={`${labelCount} label${labelCount === 1 ? "" : "s"}`}
+          className="xl:sticky xl:top-4 xl:self-start"
+          bodyClassName="mt-3 flex min-h-[460px] flex-col overflow-hidden rounded-2xl xl:h-[calc(100vh-9rem)]"
+          right={
             <div className="text-xs text-slate-500">
               {labelCount} label{labelCount === 1 ? "" : "s"}
               {opts.size === "thermal4x6" ? "" : ` · ${sheets} sheet${sheets === 1 ? "" : "s"}`}
             </div>
-          </div>
+          }
+        >
           {ids.length ? (
-            <iframe title="Label preview" srcDoc={html} className="min-h-[680px] w-full flex-1 bg-[#e7e4dc] xl:min-h-0" />
+            <iframe title="Label preview" srcDoc={html} className="min-h-[680px] w-full flex-1 rounded-2xl bg-[#e7e4dc] xl:min-h-0" />
           ) : (
             <div className="flex flex-1 flex-col items-center justify-center gap-2 p-10 text-center text-slate-400">
               <div className="text-5xl">🏷️</div>
@@ -321,7 +305,7 @@ export default function LabelsPage() {
               <div className="text-xs">Tip: print 2 copies per box, one for the top and one for the side.</div>
             </div>
           )}
-        </div>
+        </Card>
       </div>
     </div>
   );

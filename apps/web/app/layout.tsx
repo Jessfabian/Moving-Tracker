@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Bricolage_Grotesque, Inter } from "next/font/google";
 import type { ReactNode } from "react";
 import { AppShell } from "@/components/AppShell";
-import { NAV_POSITION_SCRIPT } from "@/lib/navPositionScript";
+import { NAV_POSITION_SCRIPT, THEME_SCRIPT } from "@/lib/navPositionScript";
 import { StoreProvider } from "@/lib/store-context";
 import "./globals.css";
 import "./dark-palette.css";
@@ -33,7 +33,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className={`h-full antialiased ${inter.variable} ${display.variable}`} suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: NAV_POSITION_SCRIPT }} />
+        <script dangerouslySetInnerHTML={{ __html: NAV_POSITION_SCRIPT + THEME_SCRIPT }} />
       </head>
       <body className="min-h-full">
         <StoreProvider>

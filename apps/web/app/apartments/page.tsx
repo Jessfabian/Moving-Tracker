@@ -37,8 +37,11 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AddressInput } from "@/components/AddressInput";
 import { CrudPage, StatusPill, type CrudApi } from "@/components/CrudPage";
 import { Gallery } from "@/components/Gallery";
+import { BULK_BTN, BULK_DANGER, BULK_PRIMARY, SelectableRow, SelectActions, SelectBar, useBulkDelete, useBulkHide, useBulkUpdate, useSelection } from "@/components/Selection";
+import { Card, showUndo, useDeleteWithUndo, useHiddenRows } from "@/components/Swipe";
 import { useMediaUrls } from "@/components/Media";
 import { MapView, type MapLine, type MapPin } from "@/components/MapView";
+import { Toggle } from "@/components/ui";
 import { FindRentals } from "./FindRentals";
 import { SchoolCard, SchoolsPanel, TopSchoolCell, ZoneChip, useKidLevels, useSchoolZone } from "./Schools";
 import { geocodeOne } from "@/lib/geo";
@@ -121,12 +124,8 @@ function Places() {
   const save = (next: Place[]) => store.update("moves", move.id, { places: next });
   const bias = places[0] ? { lat: places[0].lat, lng: places[0].lng } : null;
   return (
-    <div className="card-ink flex flex-col gap-4">
-      <div>
-        <div className="eyebrow text-white/50">Distance from</div>
-        <div className="font-display text-2xl font-bold tracking-tight">Your places</div>
-        <p className="mt-1 text-sm text-white/60">Work, school, family — every rental shows how far it is from your starred place.</p>
-      </div>
+    <Card id="apt-places" title="Your places" icon="📍" tone="card-ink" summary={places.length ? `${places.length}` : undefined} bodyClassName="mt-2 flex flex-col gap-4">
+      <p className="text-sm text-white/60">Distance from work, school, family — every rental shows how far it is from your starred place.</p>
       {places.length > 0 && (
         <ul className="space-y-2">
           {places.map((p) => {
@@ -180,7 +179,7 @@ function Places() {
           + Add a place
         </button>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -219,10 +218,7 @@ function SchoolControls({ on, setOn, level, setLevel, municipalOnly, setMunicipa
               </button>
             ))}
           </div>
-          <label className="flex items-center justify-between gap-2">
-            Municipal districts only
-            <input type="checkbox" checked={municipalOnly} onChange={(e) => setMunicipalOnly(e.target.checked)} />
-          </label>
+          <Toggle label="Municipal districts only" checked={municipalOnly} onChange={setMunicipalOnly} className="min-h-0 py-0" />
           <label className="flex items-center justify-between gap-2">
             Grade
             <select className="ios-popup" value={minGrade} onChange={(e) => setMinGrade(e.target.value)}>
@@ -342,9 +338,8 @@ function MapSection({ api }: { api: CrudApi<"apartments"> }) {
       <div className="flex flex-col gap-4">
         <Places />
         {place && ranked.length > 0 && (
-          <div className="card">
-            <div className="eyebrow">Closest to {place.label}</div>
-            <ol className="mt-3 space-y-1">
+          <Card id="apt-closest" title={`Closest to ${place.label}`} icon="📏" bodyClassName="mt-2">
+            <ol className="space-y-1">
               {ranked.slice(0, 6).map(({ a, d }, i) => (
                 <li key={a.id}>
                   <button className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left hover:bg-gray-50" onMouseEnter={() => setActive(a.id)} onClick={() => api.open(a.id)}>
@@ -358,7 +353,7 @@ function MapSection({ api }: { api: CrudApi<"apartments"> }) {
                 </li>
               ))}
             </ol>
-          </div>
+          </Card>
         )}
       </div>
     </section>
@@ -471,9 +466,8 @@ function Overview({ api }: { api: CrudApi<"apartments"> }) {
         </div>
       )}
       {upcoming.length > 0 && (
-        <div className="card">
-          <div className="eyebrow">Coming up</div>
-          <ul className="mt-2 grid gap-2 sm:grid-cols-2">
+        <Card id="apt-coming-up" title="Coming up" icon="📅" summary={`${upcoming.length}`} bodyClassName="mt-2">
+          <ul className="grid gap-2 sm:grid-cols-2">
             {upcoming.map((u) => (
               <li key={u.a.id + u.what}>
                 <button onClick={() => api.open(u.a.id)} className="flex w-full items-center gap-3 rounded-2xl bg-gray-50 p-3 text-left hover:bg-gray-100">
@@ -489,7 +483,7 @@ function Overview({ api }: { api: CrudApi<"apartments"> }) {
               </li>
             ))}
           </ul>
-        </div>
+        </Card>
       )}
     </div>
   );
@@ -812,19 +806,34 @@ export default function ApartmentsPage() {
 function NotChosen({ api, sort }: { api: CrudApi<"apartments">; sort: (a: Apartment, b: Apartment) => number }) {
   const db = useDb();
   const store = useStore();
-  const out = db.apartments.filter((a) => a.status === "rejected").sort(sort);
+  const hiddenRows = useHiddenRows();
+  const del = useDeleteWithUndo();
+  const out = db.apartments.filter((a) => a.status === "rejected" && !hiddenRows.isHidden("apartments", a.id)).sort(sort);
+  const sel = useSelection(out.map((a) => a.id));
+  const bulkUpdate = useBulkUpdate<Apartment>("apartments", sel, "rental");
+  const bulkDelete = useBulkDelete("apartments", sel, "rental");
+  const bulkHide = useBulkHide("apartments", sel, (id) => db.apartments.find((a) => a.id === id)?.name || "Rental", "rental");
   if (!out.length) return null;
+  const nameOf = (a: Apartment) => a.name || "Untitled rental";
+  const actions = (a: Apartment) => [
+    {
+      label: "Hide",
+      icon: "🙈",
+      onClick: () => {
+        hiddenRows.hide({ table: "apartments", id: a.id, label: nameOf(a) });
+        showUndo(`Hid “${nameOf(a)}” · find it in Settings`, () => hiddenRows.unhide("apartments", a.id));
+      },
+    },
+    { label: "Delete", icon: "🗑", tone: "danger" as const, onClick: () => del("apartments", a.id, `“${nameOf(a)}”`) },
+  ];
   return (
-    <details className="mt-8 rounded-3xl border border-gray-200 bg-white">
-      <summary className="flex min-h-14 cursor-pointer items-center justify-between gap-3 px-5 font-display text-lg font-bold">
-        <span>
-          🚫 Not chosen <span className="text-sm font-medium text-gray-400">{out.length}</span>
-        </span>
-        <span className="text-xs font-normal text-gray-400">Tap to show</span>
-      </summary>
-      <ul className="divide-y divide-gray-100 border-t border-gray-100">
+    <Card id="apt-not-chosen" title="Not chosen" icon="🚫" summary={`${out.length}`} defaultOpen={false} className="mt-8" bodyClassName="mt-2" right={!sel.active && <SelectBar sel={sel} noun="rental" />}>
+      {sel.active && <SelectBar sel={sel} noun="rental" className="mb-2" />}
+      <ul className="divide-y divide-gray-100">
         {out.map((a) => (
-          <li key={a.id} className="flex items-center gap-3 px-4 py-2">
+          <li key={a.id}>
+            <SelectableRow sel={sel} id={a.id} label={nameOf(a)} actions={actions(a)} radius="rounded-xl">
+            <div className="flex items-center gap-3 bg-white py-2">
             <button type="button" className="min-h-11 min-w-0 flex-1 text-left" onClick={() => api.open(a.id)}>
               <span className="block truncate font-semibold">{a.name || "Untitled rental"}</span>
               <span className="block truncate text-xs text-gray-500">
@@ -834,10 +843,25 @@ function NotChosen({ api, sort }: { api: CrudApi<"apartments">; sort: (a: Apartm
             <button type="button" className="btn-secondary flex-none px-3 text-sm" onClick={() => store.update("apartments", a.id, { status: "researching" })}>
               Restore
             </button>
+            </div>
+            </SelectableRow>
           </li>
         ))}
       </ul>
-    </details>
+      <SelectActions sel={sel} noun="rental">
+        <div className="grid grid-cols-2 gap-2 text-sm lg:grid-cols-4">
+          <button type="button" className={BULK_PRIMARY} onClick={() => bulkUpdate({ status: "researching" }, "Restored")}>
+            ↩︎ Restore
+          </button>
+          <button type="button" className={BULK_BTN} onClick={bulkHide}>
+            🙈 Hide
+          </button>
+          <button type="button" className={BULK_DANGER} onClick={bulkDelete}>
+            🗑 Delete
+          </button>
+        </div>
+      </SelectActions>
+    </Card>
   );
 }
 
@@ -878,11 +902,8 @@ function Comparison() {
     ["Top school", (a) => <TopSchoolCell a={a} />],
   ];
   return (
-    <div className="mb-6">
-      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="font-display text-xl font-bold tracking-tight">Compare side by side</h2>
-        <span className="text-xs text-gray-500">Tap names to choose which to compare</span>
-      </div>
+    <Card id="apt-compare" title="Compare side by side" icon="⚖️" summary={`${apts.length} places`} className="mb-6" bodyClassName="mt-2">
+      <p className="mb-2 text-xs text-gray-500">Tap names to choose which to compare</p>
       <div className="no-scrollbar mb-3 flex gap-1.5 overflow-x-auto overflow-y-hidden py-0.5">
         {live.map((a) => {
           const on = chosen.some((c) => c.id === a.id);
@@ -901,9 +922,9 @@ function Comparison() {
         })}
       </div>
       {apts.length < 2 ? (
-        <p className="card text-sm text-gray-500">Pick at least two places above to compare them.</p>
+        <p className="text-sm text-gray-500">Pick at least two places above to compare them.</p>
       ) : (
-        <div className="card overflow-x-auto p-0">
+        <div className="overflow-x-auto rounded-2xl border border-gray-200/80">
           <table className="w-max min-w-full table-fixed border-separate border-spacing-0 text-[14px]">
             <colgroup>
               <col className="w-28" />
@@ -956,28 +977,21 @@ function Comparison() {
           </table>
         </div>
       )}
-    </div>
+    </Card>
   );
 }
 function Checklist() {
-  const [open, setOpen] = useState(false);
   return (
-    <div className="card mt-5">
-      <button className="flex w-full items-center justify-between text-left text-sm font-bold" onClick={() => setOpen(!open)}>
-        <span>🔎 Touring & lease checklist</span>
-        <span className="text-slate-400">{open ? "▲" : "▼"}</span>
-      </button>
-      {open && (
-        <ul className="mt-3 grid gap-1.5 text-sm text-slate-700 md:grid-cols-2">
-          {APARTMENT_CHECKLIST.map((c) => (
-            <li key={c} className="flex gap-2">
-              <span className="text-indigo-500">•</span>
-              {c}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+    <Card id="apt-checklist" title="Touring & lease checklist" icon="🔎" defaultOpen={false} className="mt-5" bodyClassName="mt-3">
+      <ul className="grid gap-1.5 text-sm text-slate-700 md:grid-cols-2">
+        {APARTMENT_CHECKLIST.map((c) => (
+          <li key={c} className="flex gap-2">
+            <span className="text-indigo-500">•</span>
+            {c}
+          </li>
+        ))}
+      </ul>
+    </Card>
   );
 }
 

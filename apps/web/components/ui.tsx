@@ -194,6 +194,38 @@ export function Chip({ children, color }: { children: ReactNode; color?: string 
   );
 }
 
+/** The switch graphic on its own (green when on, like iOS). */
+export function SwitchKnob({ on }: { on: boolean }) {
+  return (
+    <span aria-hidden className={`relative inline-block h-[31px] w-[51px] flex-none rounded-full transition-colors duration-200 ${on ? "bg-[#34c759]" : "bg-[#e9e9eb] dark-switch-off"}`}>
+      <span className={`absolute top-[2px] h-[27px] w-[27px] rounded-full bg-[#fff] shadow-[0_3px_8px_rgba(0,0,0,0.15),0_1px_1px_rgba(0,0,0,0.16)] transition-[left] duration-200 ${on ? "left-[22px]" : "left-[2px]"}`} />
+    </span>
+  );
+}
+
+/**
+ * HIG Toggles: every on/off setting uses a switch. The whole row is the control, so it's an easy target,
+ * and VoiceOver reads it as "<label>, switch, on/off".
+ */
+export function Toggle({ checked, onChange, label, description, disabled, className = "" }: { checked: boolean; onChange: (v: boolean) => void; label: ReactNode; description?: ReactNode; disabled?: boolean; className?: string }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={`flex min-h-11 w-full items-center gap-3 py-1.5 text-left disabled:opacity-40 ${className}`}
+    >
+      <span className="min-w-0 flex-1">
+        <span className="block text-[15px] leading-snug">{label}</span>
+        {description && <span className="mt-0.5 block text-[13px] leading-snug text-gray-500">{description}</span>}
+      </span>
+      <SwitchKnob on={checked} />
+    </button>
+  );
+}
+
 function flatten(node: ReactNode): ReactNode[] {
   return Children.toArray(node).flatMap((c) => (isValidElement<{ children?: ReactNode }>(c) && c.type === Fragment ? flatten(c.props.children) : [c]));
 }

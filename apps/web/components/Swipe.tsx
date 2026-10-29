@@ -4,6 +4,7 @@ import { SCHEMAS, type TableName } from "@moving/shared";
 import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useLocalState } from "@/lib/hooks";
+import { usePrefs } from "@/lib/prefs";
 import { useStore } from "@/lib/store-context";
 import { Glyph } from "./Symbols";
 
@@ -38,6 +39,7 @@ export function useHiddenRows() {
     isHidden: (table: TableName, id: string) => rows.some((r) => r.table === table && r.id === id),
     hide: (r: HiddenRow) => setRows([...rows.filter((x) => !(x.table === r.table && x.id === r.id)), r]),
     unhide: (table: TableName, id: string) => setRows(rows.filter((x) => !(x.table === table && x.id === id))),
+    setAll: setRows,
     clear: () => setRows([]),
   };
 }
@@ -248,7 +250,8 @@ function Actions({ actions, close, offset, width }: { actions: SwipeAction[]; cl
  */
 export function SwipeRow({ actions, children, className = "", radius = "rounded-2xl", label }: { actions: SwipeAction[]; children: ReactNode; className?: string; radius?: string; label?: string }) {
   const width = actions.length * ACTION_W;
-  const { offset, dragging, close, handlers } = useSwipe(width, actions.length > 0);
+  const { swipeRows } = usePrefs();
+  const { offset, dragging, close, handlers } = useSwipe(width, actions.length > 0 && swipeRows);
   return (
     <div className={`relative touch-pan-y ${offset !== 0 ? "overflow-hidden" : ""} ${radius} ${className}`} {...handlers}>
       {offset !== 0 && <Actions actions={actions} close={close} offset={offset} width={width} />}
@@ -306,7 +309,8 @@ export function Card({
   const hidden = useHiddenCards();
   const label = typeof title === "string" ? title : id;
   const width = ACTION_W;
-  const { offset, dragging, close, handlers } = useSwipe(width, hideable);
+  const { swipeCards } = usePrefs();
+  const { offset, dragging, close, handlers } = useSwipe(width, hideable && swipeCards);
   if (hidden.isHidden(id)) return null;
   const ink = tone === "card-ink";
   const hide = () => {
@@ -323,7 +327,7 @@ export function Card({
         <div className="flex items-center gap-2">
           <button
             type="button"
-            className="flex min-h-10 min-w-0 flex-1 touch-pan-y items-center gap-2 text-left select-none"
+            className="flex min-h-10 min-w-[40%] flex-1 touch-pan-y items-center gap-2 text-left select-none"
             aria-expanded={open}
             aria-controls={bodyId}
             onClick={() => setOpen(!open)}
@@ -333,9 +337,9 @@ export function Card({
             <h2 className={`min-w-0 truncate font-display text-xl font-bold tracking-tight ${ink ? "text-white" : ""}`}>{title}</h2>
             {!open && summary != null && <span className={`ml-auto shrink-0 truncate text-sm font-semibold ${ink ? "text-lime" : "text-gray-500"}`}>{summary}</span>}
           </button>
-          {open && right}
+          {open && right != null && <div className="flex min-w-0 shrink items-center">{right}</div>}
           {hideable && (
-            <button type="button" className={`hidden h-8 shrink-0 rounded-full px-2.5 text-xs font-semibold opacity-60 hover:opacity-100 [@media(hover:hover)]:inline-block ${ink ? "text-white" : "text-gray-500"}`} onClick={hide} title="Hide this card (restore in Settings)">
+            <button type="button" className={`hidden h-8 shrink-0 rounded-full px-2.5 text-xs font-semibold opacity-60 hover:opacity-100 sm:[@media(hover:hover)]:inline-block ${ink ? "text-white" : "text-gray-500"}`} onClick={hide} title="Hide this card (restore in Settings)">
               Hide
             </button>
           )}

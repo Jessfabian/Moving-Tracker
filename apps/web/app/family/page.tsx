@@ -4,6 +4,8 @@ import { applyPlan, initials, memberAge, optionLabel, RELATIONSHIPS, type Family
 import Link from "next/link";
 import { useState } from "react";
 import { EntityForm } from "@/components/EntityForm";
+import { BULK_BTN, BULK_DANGER, SelectableRow, SelectActions, SelectBar, useBulkDelete, useBulkHide, useSelection } from "@/components/Selection";
+import { Card, showUndo, useDeleteWithUndo, useHiddenRows } from "@/components/Swipe";
 import { TaskList } from "@/components/TaskList";
 import { Drawer, Empty, PageHeader } from "@/components/ui";
 import { useTwoPane } from "@/lib/hooks";
@@ -34,7 +36,7 @@ function Tags({ m }: { m: FamilyMember }) {
   );
 }
 
-function Profile({ m, onEdit }: { m: FamilyMember; onEdit: () => void }) {
+function Profile({ m, onEdit, showName = true }: { m: FamilyMember; onEdit: () => void; showName?: boolean }) {
   const db = useDb();
   const tasks = db.tasks.filter((t) => t.member_id === m.id || t.assignee_id === m.id).sort((a, b) => (a.due_date ?? "9").localeCompare(b.due_date ?? "9"));
   const open = tasks.filter((t) => t.status === "todo" || t.status === "in_progress");
@@ -63,7 +65,7 @@ function Profile({ m, onEdit }: { m: FamilyMember; onEdit: () => void }) {
     <div className="space-y-5">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-bold">{m.name}</h2>
+          {showName && <h2 className="text-2xl font-bold">{m.name}</h2>}
           <p className="muted">
             {optionLabel(RELATIONSHIPS, m.relationship)}
             {age !== null && ` · ${age} years old`}
@@ -135,8 +137,14 @@ export default function FamilyPage() {
   const [selected, setSelected] = useState<string | null>(null);
   const [editing, setEditing] = useState<FamilyMember | "new" | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
-  const members = [...db.family_members].sort((a, b) => (memberAge(b) ?? 0) - (memberAge(a) ?? 0));
+  const hiddenRows = useHiddenRows();
+  const del = useDeleteWithUndo();
+  const members = [...db.family_members].filter((m) => !hiddenRows.isHidden("family_members", m.id)).sort((a, b) => (memberAge(b) ?? 0) - (memberAge(a) ?? 0));
+  const hiddenCount = db.family_members.length - members.length;
   const current = members.find((m) => m.id === selected) ?? (twoPane ? members[0] : undefined);
+  const sel = useSelection(members.map((m) => m.id));
+  const bulkDelete = useBulkDelete("family_members", sel, "person");
+  const bulkHide = useBulkHide("family_members", sel, (id) => db.family_members.find((m) => m.id === id)?.name ?? "Family member", "person");
 
   const onSaved = (saved: FamilyMember | null) => {
     setEditing(null);
@@ -151,21 +159,48 @@ export default function FamilyPage() {
         const open = db.tasks.filter((t) => (t.member_id === m.id || t.assignee_id === m.id) && (t.status === "todo" || t.status === "in_progress")).length;
         const age = memberAge(m);
         return (
-          <button key={m.id} onClick={() => setSelected(m.id)} className={`card text-left transition hover:shadow-md ${current?.id === m.id && twoPane ? "ring-2 ring-indigo-500" : ""}`}>
-            <div className="flex items-center gap-3">
-              <span className={`flex h-12 w-12 flex-none items-center justify-center rounded-full text-lg font-bold ${COLORS[i % COLORS.length]}`}>{initials(m.name)}</span>
-              <div className="min-w-0">
-                <div className="truncate font-bold">{m.name}</div>
-                <div className="text-xs text-gray-500">
-                  {optionLabel(RELATIONSHIPS, m.relationship)}
-                  {age !== null && ` · ${age}`} · {open} open tasks
+          <SelectableRow
+            key={m.id}
+            sel={sel}
+            id={m.id}
+            label={m.name}
+            radius="rounded-[1.25rem] lg:rounded-[1.75rem]"
+            actions={[
+              {
+                label: "Hide",
+                icon: "🙈",
+                onClick: () => {
+                  hiddenRows.hide({ table: "family_members", id: m.id, label: m.name });
+                  showUndo(`Hid “${m.name}” · find it in Settings`, () => hiddenRows.unhide("family_members", m.id));
+                },
+              },
+              {
+                label: "Delete",
+                icon: "🗑",
+                tone: "danger",
+                onClick: () => {
+                  if (selected === m.id) setSelected(null);
+                  del("family_members", m.id, `“${m.name}”`);
+                },
+              },
+            ]}
+          >
+            <button onClick={() => setSelected(m.id)} className={`card w-full text-left transition hover:shadow-md ${current?.id === m.id && twoPane ? "ring-2 ring-indigo-500" : ""}`}>
+              <div className="flex items-center gap-3">
+                <span className={`flex h-12 w-12 flex-none items-center justify-center rounded-full text-lg font-bold ${COLORS[i % COLORS.length]}`}>{initials(m.name)}</span>
+                <div className="min-w-0">
+                  <div className="truncate font-bold">{m.name}</div>
+                  <div className="text-xs text-gray-500">
+                    {optionLabel(RELATIONSHIPS, m.relationship)}
+                    {age !== null && ` · ${age}`} · {open} open tasks
+                  </div>
                 </div>
               </div>
-            </div>
-            <div className="mt-3">
-              <Tags m={m} />
-            </div>
-          </button>
+              <div className="mt-3">
+                <Tags m={m} />
+              </div>
+            </button>
+          </SelectableRow>
         );
       })}
     </div>
@@ -184,14 +219,35 @@ export default function FamilyPage() {
         }
       />
       {msg && <p className="mb-4 rounded-lg bg-green-50 p-2 text-sm text-green-800">{msg}</p>}
+      {members.length > 0 && (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <span className="text-sm text-gray-500">
+            {members.length} {members.length === 1 ? "person" : "people"}
+            {hiddenCount > 0 && (
+              <a href="/settings#hidden" className="ml-1 text-gray-400 underline">
+                · {hiddenCount} hidden
+              </a>
+            )}
+          </span>
+          <span className="flex-1" />
+          {!sel.active && <SelectBar sel={sel} noun="person" />}
+        </div>
+      )}
+      {sel.active && <SelectBar sel={sel} noun="person" className="mb-3" />}
       {!members.length ? (
-        <Empty icon="👨‍👩‍👧" title="Add your family">
-          Add each person moving with you, including ages, school, work and health info.
+        <Empty icon="👨‍👩‍👧" title={hiddenCount ? "Everyone is hidden" : "Add your family"}>
+          {hiddenCount ? "Restore hidden people in Settings." : "Add each person moving with you, including ages, school, work and health info."}
         </Empty>
       ) : twoPane ? (
         <div className="grid grid-cols-2 gap-7">
           <div>{cards}</div>
-          <div className="card sticky top-4 max-h-[calc(100vh-2rem)] overflow-y-auto">{current && <Profile m={current} onEdit={() => setEditing(current)} />}</div>
+          {current && (
+            <div className="sticky top-4 self-start">
+              <Card id="family.profile" title={current.name} bodyClassName="mt-2 max-h-[calc(100vh-7rem)] overflow-y-auto">
+                <Profile m={current} onEdit={() => setEditing(current)} showName={false} />
+              </Card>
+            </div>
+          )}
         </div>
       ) : (
         <>
@@ -201,6 +257,16 @@ export default function FamilyPage() {
           </Drawer>
         </>
       )}
+      <SelectActions sel={sel} noun="person">
+        <div className="grid grid-cols-2 gap-2 text-sm">
+          <button type="button" className={BULK_BTN} onClick={bulkHide}>
+            🙈 Hide
+          </button>
+          <button type="button" className={BULK_DANGER} onClick={bulkDelete}>
+            🗑 Delete
+          </button>
+        </div>
+      </SelectActions>
       <Drawer open={!!editing} onClose={() => setEditing(null)} title={editing === "new" ? "Add family member" : "Edit profile"}>
         {editing && <EntityForm key={editing === "new" ? "new" : editing.id} table="family_members" row={editing === "new" ? null : editing} onDone={onSaved} />}
       </Drawer>

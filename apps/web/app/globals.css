@@ -452,13 +452,11 @@ main > * {
     0 0 0 0.5px rgba(0, 0, 0, 0.1),
     0 12px 32px -14px rgba(0, 0, 0, 0.35);
 }
-@media (prefers-color-scheme: dark) {
-  .material-bar {
-    background: rgba(30, 30, 32, 0.78);
-    box-shadow:
-      0 0 0 0.5px rgba(255, 255, 255, 0.12),
-      0 12px 32px -14px rgba(0, 0, 0, 0.8);
-  }
+html.dark .material-bar {
+  background: rgba(30, 30, 32, 0.78);
+  box-shadow:
+    0 0 0 0.5px rgba(255, 255, 255, 0.12),
+    0 12px 32px -14px rgba(0, 0, 0, 0.8);
 }
 @media (prefers-reduced-transparency: reduce) {
   .material-bar {
@@ -467,8 +465,8 @@ main > * {
     backdrop-filter: none;
   }
 }
-@media (prefers-reduced-transparency: reduce) and (prefers-color-scheme: dark) {
-  .material-bar {
+@media (prefers-reduced-transparency: reduce) {
+  html.dark .material-bar {
     background: #1e1e20;
   }
 }

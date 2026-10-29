@@ -26,7 +26,8 @@ import Link from "next/link";
 import { useState } from "react";
 import { EntityForm } from "@/components/EntityForm";
 import { MoneyImport } from "@/components/MoneyImport";
-import { Card, SwipeRow, showUndo, useDeleteWithUndo, useHiddenRows } from "@/components/Swipe";
+import { BULK_BTN, BULK_DANGER, BULK_PRIMARY, SelectableRow, SelectActions, SelectBar, useBulkDelete, useBulkHide, useBulkUpdate, useSelection } from "@/components/Selection";
+import { Card, showUndo, useDeleteWithUndo, useHiddenRows } from "@/components/Swipe";
 import { Drawer } from "@/components/ui";
 import { useDb, useStore } from "@/lib/store-context";
 
@@ -122,6 +123,26 @@ export default function BillsPage() {
     },
     { label: "Delete", icon: "🗑", tone: "danger" as const, onClick: () => del(table, id, `“${label}”`) },
   ];
+  const billSel = useSelection(tab === "bills" ? bills.map((b) => b.id) : []);
+  const incSel = useSelection(tab === "income" ? incomes.map((i) => i.id) : []);
+  const sel = tab === "bills" ? billSel : incSel;
+  const noun = tab === "bills" ? "bill" : "income";
+  const billUpdate = useBulkUpdate<Bill>("bills", billSel, "bill");
+  const billDelete = useBulkDelete("bills", billSel, "bill");
+  const billHide = useBulkHide("bills", billSel, (id) => db.bills.find((b) => b.id === id)?.name ?? "Bill", "bill");
+  const incUpdate = useBulkUpdate<Income>("incomes", incSel, "income");
+  const incDelete = useBulkDelete("incomes", incSel, "income");
+  const incHide = useBulkHide("incomes", incSel, (id) => db.incomes.find((i) => i.id === id)?.source ?? "Income", "income");
+  const bulkPaid = () => {
+    const picked = db.bills.filter((b) => billSel.ids.includes(b.id));
+    if (!picked.length) return;
+    const before = picked.map((b) => ({ id: b.id, prev: { last_paid: b.last_paid ?? null, next_due: b.next_due ?? null } }));
+    for (const b of picked) store.update("bills", b.id, markBillPaid(b, t), { silent: true });
+    billSel.release(picked.map((b) => b.id));
+    showUndo(`✓ Marked paid · ${picked.length} bill${picked.length === 1 ? "" : "s"}`, () => {
+      for (const b of before) store.update("bills", b.id, b.prev, { silent: true });
+    });
+  };
   const dueLabel = (d: { daysAway: number; overdue: boolean }) => (d.overdue ? `${-d.daysAway}d overdue` : d.daysAway === 0 ? "due today" : d.daysAway === 1 ? "due tomorrow" : `in ${d.daysAway}d`);
 
   return (
@@ -170,7 +191,7 @@ export default function BillsPage() {
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <section className="card">
+        <Card id="bills-list" title="Bills & income" icon="🧾" summary={tab === "bills" ? `${formatMoney(flow.bills)}/mo` : `${formatMoney(flow.incomeNet)}/mo`} bodyClassName="mt-3">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div className="inline-flex rounded-full bg-gray-100 p-1">
               {(
@@ -185,7 +206,9 @@ export default function BillsPage() {
               ))}
             </div>
             <span className="text-sm text-gray-500">{tab === "bills" ? `${formatMoney(flow.bills)}/mo ${phase === "now" ? "today" : "after moving"}` : `${formatMoney(flow.incomeNet)}/mo take-home`}</span>
+            {!sel.active && <SelectBar sel={sel} noun={noun} />}
           </div>
+          {sel.active && <SelectBar sel={sel} noun={noun} className="mb-3" />}
           {tab === "bills" ? (
             bills.length ? (
               <ul className="space-y-2">
@@ -214,7 +237,7 @@ export default function BillsPage() {
                   const soon = !!d && (d.overdue || d.daysAway <= 7);
                   return (
                     <li key={b.id}>
-                      <SwipeRow actions={rowActions("bills", b.id, b.name)} label={b.name}>
+                      <SelectableRow sel={billSel} id={b.id} actions={rowActions("bills", b.id, b.name)} label={b.name}>
                       <div className={`flex w-full items-center gap-2 rounded-2xl border bg-white p-3 transition hover:shadow-md ${d?.overdue ? "border-red-300" : "border-gray-200/80"}`}>
                       <button onClick={() => setEditing({ table: "bills", row: b })} className="flex min-w-0 flex-1 items-center gap-3 text-left">
                         <span className="flex h-10 w-10 flex-none items-center justify-center rounded-xl font-display font-bold text-white" style={{ background: CAT_COLORS[b.category] ?? "#78716c" }}>
@@ -245,7 +268,7 @@ export default function BillsPage() {
                         </button>
                       )}
                       </div>
-                      </SwipeRow>
+                      </SelectableRow>
                     </li>
                   );
                 })}
@@ -265,7 +288,7 @@ export default function BillsPage() {
                 const m = incomeMonthly(i);
                 return (
                   <li key={i.id}>
-                    <SwipeRow actions={rowActions("incomes", i.id, i.source)} label={i.source}>
+                    <SelectableRow sel={incSel} id={i.id} actions={rowActions("incomes", i.id, i.source)} label={i.source}>
                     <button onClick={() => setEditing({ table: "incomes", row: i })} className="flex w-full items-center gap-3 rounded-2xl border border-gray-200/80 bg-white p-3 text-left transition hover:shadow-md">
                       <span className="flex h-10 w-10 flex-none items-center justify-center rounded-xl bg-sage font-display font-bold">$</span>
                       <span className="min-w-0 flex-1">
@@ -281,7 +304,7 @@ export default function BillsPage() {
                         <span className="text-[11px] text-gray-400">/mo take-home</span>
                       </span>
                     </button>
-                    </SwipeRow>
+                    </SelectableRow>
                   </li>
                 );
               })}
@@ -295,7 +318,70 @@ export default function BillsPage() {
               </button>
             </div>
           )}
-        </section>
+          {tab === "bills" ? (
+            <SelectActions sel={billSel} noun="bill">
+              <div className="grid grid-cols-2 gap-2 text-sm lg:grid-cols-4">
+                <button type="button" className={BULK_PRIMARY} onClick={bulkPaid}>
+                  ✓ Mark paid
+                </button>
+                <select className={BULK_BTN} aria-label="Set after-the-move status" value="" onChange={(e) => e.target.value && billUpdate({ status: e.target.value as Bill["status"] }, `After the move: ${optionLabel(BILL_STATUSES, e.target.value)}`)}>
+                  <option value="">After the move…</option>
+                  {BILL_STATUSES.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+                <select className={BULK_BTN} aria-label="Set category" value="" onChange={(e) => e.target.value && billUpdate({ category: e.target.value as Bill["category"] }, `Category: ${optionLabel(BILL_CATEGORIES, e.target.value)}`)}>
+                  <option value="">Category…</option>
+                  {BILL_CATEGORIES.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+                <select className={BULK_BTN} aria-label="Set autopay" value="" onChange={(e) => e.target.value && billUpdate({ autopay: e.target.value === "on" }, e.target.value === "on" ? "Autopay on" : "Autopay off")}>
+                  <option value="">Autopay…</option>
+                  <option value="on">On autopay</option>
+                  <option value="off">Not on autopay</option>
+                </select>
+                <button type="button" className={BULK_BTN} onClick={billHide}>
+                  🙈 Hide
+                </button>
+                <button type="button" className={BULK_DANGER} onClick={billDelete}>
+                  🗑 Delete
+                </button>
+              </div>
+            </SelectActions>
+          ) : (
+            <SelectActions sel={incSel} noun="income">
+              <div className="grid grid-cols-2 gap-2 text-sm lg:grid-cols-4">
+                <select className={BULK_BTN} aria-label="Set status around the move" value="" onChange={(e) => e.target.value && incUpdate({ status: e.target.value as Income["status"] }, `Around the move: ${optionLabel(INCOME_STATUSES, e.target.value)}`)}>
+                  <option value="">Around the move…</option>
+                  {INCOME_STATUSES.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+                <select className={BULK_BTN} aria-label="Set type" value="" onChange={(e) => e.target.value && incUpdate({ kind: e.target.value as Income["kind"] }, `Type: ${optionLabel(INCOME_KINDS, e.target.value)}`)}>
+                  <option value="">Type…</option>
+                  {INCOME_KINDS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+                <button type="button" className={BULK_BTN} onClick={incHide}>
+                  🙈 Hide
+                </button>
+                <button type="button" className={BULK_DANGER} onClick={incDelete}>
+                  🗑 Delete
+                </button>
+              </div>
+            </SelectActions>
+          )}
+        </Card>
 
         <aside className="space-y-4">
           <Card id="bills.due" title="Due in the next 30 days" icon="📅" summary={overdue.length ? `${overdue.length} overdue` : due.length ? `${due.length} bills` : undefined}>

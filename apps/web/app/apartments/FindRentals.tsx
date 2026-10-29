@@ -23,7 +23,8 @@ import {
   type RentalResult,
 } from "@moving/shared";
 import { useMemo, useState } from "react";
-import type { CrudApi } from "@/components/CrudPage";
+import type { CrudApi } from "@/components/CrudPage";
+import { Card } from "@/components/Swipe";
 import { useLocalState } from "@/lib/hooks";
 import { imageUrlToMedia } from "@/lib/media";
 import { useDb, useStore } from "@/lib/store-context";
@@ -141,17 +142,14 @@ export function FindRentals({ api }: { api: CrudApi<"apartments"> }) {
   const stale = found && found.key !== areaKey;
 
   return (
-    <section className="card mb-6 p-0">
-      <button type="button" className="flex min-h-14 w-full items-center justify-between gap-3 px-5 text-left" onClick={() => setOpen(!open)} aria-expanded={open}>
-        <span className="min-w-0">
-          <span className="block font-display text-lg font-bold">🔎 Find apartments</span>
-          <span className="block truncate text-xs text-gray-500">{summary || "Tell us what you're looking for"}</span>
-        </span>
+    <Card id="apt-find-rentals" title="Find apartments" icon="🔎" summary={summary || undefined} className="mb-6" bodyClassName="mt-2">
+      <button type="button" className="flex min-h-11 w-full items-center justify-between gap-3 text-left" onClick={() => setOpen(!open)} aria-expanded={open}>
+        <span className="block min-w-0 truncate text-xs text-gray-500">{summary || "Tell us what you're looking for"}</span>
         <span className="flex-none text-sm font-semibold text-accent">{open ? "Done" : "Edit"}</span>
       </button>
 
       {open && (
-        <div className="space-y-3 border-t border-gray-100 px-5 py-4">
+        <div className="mt-2 space-y-3 border-t border-gray-100 py-4">
           <label className="block text-xs font-semibold text-gray-500">
             Search around
             <select className="input mt-1" value={nearId} onChange={(e) => set({ nearPlaceId: e.target.value })}>
@@ -352,7 +350,7 @@ export function FindRentals({ api }: { api: CrudApi<"apartments"> }) {
         </div>
       )}
 
-      <div className="border-t border-gray-100 px-5 py-4">
+      <div className="border-t border-gray-100 py-4">
         <button type="button" className="btn-primary w-full"         disabled={busy || (!seed.city.trim() && (!!center || !s.zip.trim()))} onClick={search}>
                   {busy ? (radius ? "Searching every town in range… (up to a minute)" : "Searching rentals…") : found && !stale ? "↻ Search again" : "🔎 Search rentals"}
         </button>
@@ -361,7 +359,7 @@ export function FindRentals({ api }: { api: CrudApi<"apartments"> }) {
       </div>
 
       {found && (
-        <div className="border-t border-gray-100 px-5 py-4">
+        <div className="border-t border-gray-100 py-4">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div className="w-full text-sm">
               <b>{results.length}</b> <span className="text-gray-500">match{results.length === 1 ? "" : "es"} of {found.results.length} on Rent.com</span>
@@ -456,10 +454,10 @@ export function FindRentals({ api }: { api: CrudApi<"apartments"> }) {
 
       {links.length > 0 && (
         <details className="border-t border-gray-100">
-          <summary className="flex min-h-12 cursor-pointer items-center justify-between px-5 text-sm font-semibold">
+          <summary className="flex min-h-12 cursor-pointer items-center justify-between text-sm font-semibold">
             Search other sites <span className="text-xs font-normal text-gray-400">Apartments.com, Zillow…</span>
           </summary>
-          <div className="px-5 pb-4">
+          <div className="pb-1">
             <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {links.map((l) => (
                 <li key={l.site}>
@@ -482,7 +480,7 @@ export function FindRentals({ api }: { api: CrudApi<"apartments"> }) {
           </div>
         </details>
       )}
-    </section>
+    </Card>
   );
 }
 

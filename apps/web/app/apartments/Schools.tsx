@@ -23,6 +23,7 @@ import {
 } from "@moving/shared";
 import { useEffect, useMemo, useState } from "react";
 import { useDb, useStore } from "@/lib/store-context";
+import { Card } from "@/components/Swipe";
 
 const gradeRank = (letter: string | null | undefined) => {
   const i = "ABCDF".indexOf((letter ?? "").charAt(0));
@@ -296,19 +297,28 @@ export function SchoolsPanel({ a, levels, municipalOnly = false, onFocus, compac
 /** Details for a school tapped on the map. */
 export function SchoolCard({ school, from, fromName, onClose }: { school: School; from: LatLng | null; fromName?: string; onClose: () => void }) {
   return (
-    <div className="card border-2 border-ink">
+    <Card
+      id="apt-school-detail"
+      title={school.name}
+      icon="🏫"
+      summary={school.letter ? `Grade ${school.letter}` : undefined}
+      hideable={false}
+      className="ring-2 ring-ink"
+      bodyClassName="mt-2"
+      right={
+        <button className="flex h-11 w-11 flex-none items-center justify-center text-gray-400 hover:text-ink" onClick={onClose} aria-label="Close school">
+          ✕
+        </button>
+      }
+    >
       <div className="flex items-start gap-4">
         <GradeBadge letter={school.letter} size="lg" />
         <div className="min-w-0 flex-1">
-          <div className="font-display text-xl font-bold">{school.name}</div>
           <div className="text-sm text-gray-500">
             {school.street}, {school.city} {school.zip} · {school.phone}
           </div>
           <div className="mt-1 text-xs text-gray-500">{school.district.name}</div>
         </div>
-        <button className="flex h-11 w-11 flex-none items-center justify-center text-gray-400 hover:text-ink" onClick={onClose} aria-label="Close school">
-          ✕
-        </button>
       </div>
       <div className="mt-3 grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
         {[
@@ -330,7 +340,7 @@ export function SchoolCard({ school, from, fromName, onClose }: { school: School
       <div className="mt-3">
         <SchoolLinks s={school} />
       </div>
-    </div>
+    </Card>
   );
 }
 

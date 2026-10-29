@@ -1,148 +1,151 @@
 /*
- * Dark Mode (Apple HIG): follows the system appearance automatically, no in-app switch.
+ * Dark Mode (Apple HIG): follows the system appearance by default; Settings → Appearance can force light or dark.
+ * Applied through `html.dark`, which the early head script and ThemeController keep in sync.
  * Model: page = black, cards = #1c1c1e (secondary system background), labels = near-white.
  *  - `white` becomes the card surface and `ink` becomes the label colour, so `bg-white`, `text-ink`,
  *    `border-ink`, `bg-ink/5` hovers and inverted "selected" chips (`bg-ink text-white`) adapt on their own.
  *  - Dark panels (.card-ink / .ink-panel) and photo overlays restore the light-mode values inside them,
  *    so the white-on-dark content designed for them stays exactly as it is.
  */
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-    --paper: #000;
-    --ink: #f5f5f7;
-    --surface: #1c1c1e;
-    --grouped: #000;
-    --separator: rgba(84, 84, 88, 0.65);
-    --color-paper: #000;
-    --color-white: #1c1c1e;
-    --color-ink: #f5f5f7;
-    --color-sand: #2b2620;
-    --color-sage: #1f2a1e;
-    --color-sky: #1a2633;
-    --color-lilac: #262036;
-    --color-blush: #33201b;
-    --color-lime: #d7ff3e;
-  }
+html.dark {
+  color-scheme: dark;
+  --paper: #000;
+  --ink: #f5f5f7;
+  --surface: #1c1c1e;
+  --grouped: #000;
+  --separator: rgba(84, 84, 88, 0.65);
+  --color-paper: #000;
+  --color-white: #1c1c1e;
+  --color-ink: #f5f5f7;
+  --color-sand: #2b2620;
+  --color-sage: #1f2a1e;
+  --color-sky: #1a2633;
+  --color-lilac: #262036;
+  --color-blush: #33201b;
+  --color-lime: #d7ff3e;
+}
 
-  /* Dark panels keep their original light-mode tokens; their surface lifts slightly off the black page. */
-  .card-ink,
-  .ink-panel,
-  [class^="bg-black/"],
-  [class*=" bg-black/"],
-  [class^="from-black"],
-  [class*=" from-black"],
-  .bg-accent,
-  .btn-accent {
-    --color-white: #fff;
-    --color-ink: #0d0d0f;
-  }
-  .card-ink,
-  .ink-panel {
-    --color-gray-50: #faf9f7;
-    --color-gray-100: #f2f0eb;
-    --color-gray-200: #e6e2da;
-    --color-gray-300: #d4cfc5;
-    --color-gray-400: #a29c91;
-    --color-gray-500: #77716a;
-    --color-gray-600: #57524c;
-    --color-gray-700: #3f3b36;
-    background-color: #1c1c1e;
-    box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.12);
-  }
-  /* Lime and pastel surfaces carry dark text. */
-  .bg-lime,
-  .text-ink.bg-lime {
-    --color-ink: #0d0d0f;
-    --color-white: #fff;
-  }
-  /* Primary buttons invert (white fill, black label) like iOS filled buttons on dark. */
-  .btn-primary {
-    background-color: #f5f5f7;
-    color: #000;
-    box-shadow: none;
-  }
-  .btn-primary:hover {
-    background-color: var(--accent);
-    color: #fff;
-  }
-  .btn-secondary {
-    border-color: #48484a;
-  }
-  .card {
-    border-color: transparent;
-    box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.06);
-  }
-  .input:focus {
-    background-color: #2c2c2e;
-  }
-  .highlight {
-    background: linear-gradient(transparent 58%, rgba(255, 90, 31, 0.45) 58%, rgba(255, 90, 31, 0.45) 92%, transparent 92%);
-  }
-  ::selection {
-    background: rgba(255, 90, 31, 0.5);
-    color: #fff;
-  }
-  input[type="checkbox"] {
-    accent-color: var(--accent);
-  }
+/* Dark panels keep their original light-mode tokens; their surface lifts slightly off the black page. */
+html.dark .card-ink,
+html.dark .ink-panel,
+html.dark [class^="bg-black/"],
+html.dark [class*=" bg-black/"],
+html.dark [class^="from-black"],
+html.dark [class*=" from-black"],
+html.dark .bg-accent,
+html.dark .btn-accent {
+  --color-white: #fff;
+  --color-ink: #0d0d0f;
+}
+html.dark .card-ink,
+html.dark .ink-panel {
+  --color-gray-50: #faf9f7;
+  --color-gray-100: #f2f0eb;
+  --color-gray-200: #e6e2da;
+  --color-gray-300: #d4cfc5;
+  --color-gray-400: #a29c91;
+  --color-gray-500: #77716a;
+  --color-gray-600: #57524c;
+  --color-gray-700: #3f3b36;
+  background-color: #1c1c1e;
+  box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.12);
+}
+/* Lime and pastel surfaces carry dark text. */
+html.dark .bg-lime,
+html.dark .text-ink.bg-lime {
+  --color-ink: #0d0d0f;
+  --color-white: #fff;
+}
+/* Primary buttons invert (white fill, black label) like iOS filled buttons on dark. */
+html.dark .btn-primary {
+  background-color: #f5f5f7;
+  color: #000;
+  box-shadow: none;
+}
+html.dark .btn-primary:hover {
+  background-color: var(--accent);
+  color: #fff;
+}
+html.dark .btn-secondary {
+  border-color: #48484a;
+}
+html.dark .card {
+  border-color: transparent;
+  box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.06);
+}
+html.dark .input:focus {
+  background-color: #2c2c2e;
+}
+html.dark .highlight {
+  background: linear-gradient(transparent 58%, rgba(255, 90, 31, 0.45) 58%, rgba(255, 90, 31, 0.45) 92%, transparent 92%);
+}
+html.dark ::selection {
+  background: rgba(255, 90, 31, 0.5);
+  color: #fff;
+}
+html.dark input[type="checkbox"] {
+  accent-color: var(--accent);
+}
 
-  .ios-menu {
-    background: rgba(37, 37, 39, 0.92);
-    box-shadow:
-      0 0 0 0.5px rgba(255, 255, 255, 0.1),
-      0 18px 50px -12px rgba(0, 0, 0, 0.7);
-  }
-  .ios-menu > * {
-    color: #fff !important;
-  }
-  .ios-menu > * + * {
-    box-shadow: inset 0 0.5px 0 rgba(84, 84, 88, 0.6) !important;
-  }
-  .ios-menu > *:active {
-    background: rgba(255, 255, 255, 0.08) !important;
-  }
-  .ios-menu > .btn-danger {
-    color: #ff453a !important;
-  }
-  .ios-list {
-    background: var(--surface);
-    box-shadow: none;
-  }
-  .ios-list > * + *::before {
-    background: var(--separator);
-  }
-  .bg-grouped {
-    background-color: #000;
-  }
-  /* Hairlines and press states drawn in black become light on dark. */
-  [class*="border-black/"] {
-    border-color: var(--separator);
-  }
-  [class*="active:bg-black/"]:active,
-  [class*="hover:bg-black/"]:hover {
-    background-color: rgba(255, 255, 255, 0.08);
-  }
-  .bg-\[\#e9e6df\] {
-    background-color: #1c1c1e;
-  }
+html.dark .ios-menu {
+  background: rgba(37, 37, 39, 0.92);
+  box-shadow:
+    0 0 0 0.5px rgba(255, 255, 255, 0.1),
+    0 18px 50px -12px rgba(0, 0, 0, 0.7);
+}
+html.dark .ios-menu > * {
+  color: #fff !important;
+}
+html.dark .ios-menu > * + * {
+  box-shadow: inset 0 0.5px 0 rgba(84, 84, 88, 0.6) !important;
+}
+html.dark .ios-menu > *:active {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+html.dark .ios-menu > .btn-danger {
+  color: #ff453a !important;
+}
+html.dark .ios-list {
+  background: var(--surface);
+  box-shadow: none;
+}
+html.dark .ios-list > * + *::before {
+  background: var(--separator);
+}
+html.dark .bg-grouped {
+  background-color: #000;
+}
+/* Hairlines and press states drawn in black become light on dark. */
+html.dark [class*="border-black/"] {
+  border-color: var(--separator);
+}
+html.dark [class*="active:bg-black/"]:active,
+html.dark [class*="hover:bg-black/"]:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+html.dark .bg-\[\#e9e6df\] {
+  background-color: #1c1c1e;
+}
 
-  /* Soften bright photos and white product shots so they don't glow (HIG: Dark Mode → images). */
-  main img:not([data-no-dim]) {
-    filter: brightness(0.9);
-  }
-  .mt-tiles {
-    filter: invert(1) hue-rotate(180deg) grayscale(0.5) brightness(0.85) contrast(0.9);
-  }
-  .leaflet-container {
-    background: #1c1c1e;
-  }
-  .mt-pin,
-  .mt-school {
-    border-color: #1c1c1e;
-  }
-  .mt-plane {
-    color: #fff;
-    text-shadow: 0 0 3px #000;
-  }
+/* Soften bright photos and white product shots so they don't glow (HIG: Dark Mode → images). */
+html.dark main img:not([data-no-dim]) {
+  filter: brightness(0.9);
+}
+html.dark .mt-tiles {
+  filter: invert(1) hue-rotate(180deg) grayscale(0.5) brightness(0.85) contrast(0.9);
+}
+html.dark .leaflet-container {
+  background: #1c1c1e;
+}
+html.dark .mt-pin,
+html.dark .mt-school {
+  border-color: #1c1c1e;
+}
+html.dark .mt-plane {
+  color: #fff;
+  text-shadow: 0 0 3px #000;
+}
+
+html.dark .dark-switch-off {
+  background: rgba(120, 120, 128, 0.32);
 }

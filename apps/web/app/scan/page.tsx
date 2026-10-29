@@ -62,9 +62,9 @@ export default function ScanPage() {
   return (
     <div className="mx-auto max-w-2xl">
       <PageHeader title="Quick scan" icon="▦" subtitle="One place to capture everything: book ISBNs, product barcodes, box labels, or a photo of anything." />
-      <div className="card mb-4">
-        <label className="label" htmlFor="room">
-          I&apos;m working in…
+      <Card id="scan.room" title="I'm working in…" summary={db.rooms.find((r) => r.id === roomId)?.name ?? "No specific room"} className="mb-4" bodyClassName="mt-2">
+        <label className="sr-only" htmlFor="room">
+          Room I&apos;m working in
         </label>
         <select id="room" className="input" value={roomId} onChange={(e) => setRoomId(e.target.value)}>
           <option value="">(no specific room)</option>
@@ -74,7 +74,7 @@ export default function ScanPage() {
             </option>
           ))}
         </select>
-      </div>
+      </Card>
       <button className="card mb-3 flex w-full items-center gap-4 bg-gradient-to-br from-indigo-600 to-violet-600 py-6 text-left text-white transition hover:shadow-md" onClick={() => setRoomScan(true)}>
         <span className="text-5xl">📸</span>
         <span>

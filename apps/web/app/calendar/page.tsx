@@ -1,10 +1,11 @@
 "use client";
 
-import { Card } from "@/components/Swipe";
 import { CALENDAR_LEGEND, calendarEvents, formatDate, formatTime, monthGrid, today, toDateString, addDays, type Appointment, type CalendarEvent, type CalendarSource } from "@moving/shared";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { EntityForm } from "@/components/EntityForm";
+import { BULK_BTN, BULK_DANGER, SelectableRow, SelectActions, SelectBar, useBulkDelete, useBulkHide, useBulkUpdate, useSelection } from "@/components/Selection";
+import { Card, showUndo, useDeleteWithUndo, useHiddenRows } from "@/components/Swipe";
 import { Drawer } from "@/components/ui";
 import { useDb } from "@/lib/store-context";
 
@@ -17,7 +18,7 @@ function shiftMonth(anchor: string, n: number): string {
 
 function EventRow({ e, onOpen }: { e: CalendarEvent; onOpen: (e: CalendarEvent) => void }) {
   return (
-    <button onClick={() => onOpen(e)} className={`group flex w-full items-start gap-3 rounded-2xl p-3 text-left transition hover:bg-gray-50 ${e.done ? "opacity-50" : ""}`}>
+    <button onClick={() => onOpen(e)} className={`group flex w-full items-start gap-3 rounded-2xl bg-white p-3 text-left transition hover:bg-gray-50 ${e.done ? "opacity-50" : ""}`}>
       <span className="mt-1 h-8 w-1.5 flex-none rounded-full" style={{ background: e.color }} />
       <span className="min-w-0 flex-1">
         <span className={`block truncate font-semibold ${e.done ? "line-through" : ""}`}>{e.title}</span>
@@ -47,7 +48,9 @@ export default function CalendarPage() {
 
   const grid = useMemo(() => monthGrid(anchor), [anchor]);
   const all = useMemo(() => calendarEvents(db, { from: shiftMonth(anchor, -1), to: shiftMonth(anchor, 13) }), [db, anchor]);
-  const events = useMemo(() => all.filter((e) => !hidden.has(e.source)), [all, hidden]);
+  const hiddenRows = useHiddenRows();
+  const del = useDeleteWithUndo();
+  const events = useMemo(() => all.filter((e) => !hidden.has(e.source) && !hiddenRows.rows.some((h) => h.table === "appointments" && e.id === `appt-${h.id}`)), [all, hidden, hiddenRows.rows]);
   const byDay = useMemo(() => {
     const m = new Map<string, CalendarEvent[]>();
     for (const e of events) m.set(e.date, [...(m.get(e.date) ?? []), e]);
@@ -66,6 +69,47 @@ export default function CalendarPage() {
       if (a) return setEditing(a);
     }
     window.location.href = e.href;
+  };
+
+  const apptOf = (e: CalendarEvent) => (e.source === "appointment" && e.id.startsWith("appt-") ? db.appointments.find((a) => `appt-${a.id}` === e.id) : undefined);
+  const visibleAppts = (view === "month" ? dayEvents : upcoming).map(apptOf).filter((a): a is Appointment => !!a);
+  const sel = useSelection(visibleAppts.map((a) => a.id));
+  const bulkUpdate = useBulkUpdate<Appointment>("appointments", sel, "appointment");
+  const bulkDelete = useBulkDelete("appointments", sel, "appointment");
+  const bulkHide = useBulkHide("appointments", sel, (id) => db.appointments.find((a) => a.id === id)?.title || "Appointment", "appointment");
+  const row = (e: CalendarEvent) => {
+    const a = apptOf(e);
+    if (!a) return <EventRow key={e.id} e={e} onOpen={open} />;
+    const label = a.title || "Appointment";
+    return (
+      <SelectableRow
+        key={e.id}
+        sel={sel}
+        id={a.id}
+        label={label}
+        actions={[
+          {
+            label: "Hide",
+            icon: "🙈",
+            onClick: () => {
+              hiddenRows.hide({ table: "appointments", id: a.id, label });
+              showUndo(`Hid “${label}” · find it in Settings`, () => hiddenRows.unhide("appointments", a.id));
+            },
+          },
+          {
+            label: "Delete",
+            icon: "🗑",
+            tone: "danger",
+            onClick: () => {
+              if (editing !== "new" && editing?.id === a.id) setEditing(null);
+              del("appointments", a.id, `“${label}”`);
+            },
+          },
+        ]}
+      >
+        <EventRow e={e} onOpen={open} />
+      </SelectableRow>
+    );
   };
 
   const groupedMap = new Map<string, CalendarEvent[]>();
@@ -90,6 +134,7 @@ export default function CalendarPage() {
               </button>
             ))}
           </div>
+          {!sel.active && <SelectBar sel={sel} noun="appointment" />}
           <button className="btn-accent" onClick={() => setEditing("new")}>
             + Appointment
           </button>
@@ -134,6 +179,8 @@ export default function CalendarPage() {
           );
         })}
       </div>
+
+      {sel.active && <SelectBar sel={sel} noun="appointment" />}
 
       {view === "month" ? (
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -199,23 +246,27 @@ export default function CalendarPage() {
               })}
             </div>
           </Card>
-          <aside className="card self-start xl:sticky xl:top-4">
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <div className="eyebrow">{selected === now ? "Today" : formatDate(selected, { weekday: "long" })}</div>
-                <div className="font-display text-3xl font-bold tracking-tight">{formatDate(selected, { month: "long", day: "numeric" })}</div>
+          <aside className="self-start xl:sticky xl:top-4">
+            <Card
+              id="calendar.day"
+              title={formatDate(selected, { month: "long", day: "numeric" })}
+              summary={dayEvents.length ? `${dayEvents.length} planned` : undefined}
+              right={
+                <button className="btn-secondary px-3 text-xs" onClick={() => setEditing("new")}>
+                  + Add
+                </button>
+              }
+              bodyClassName="mt-1"
+            >
+              <div className="eyebrow">{selected === now ? "Today" : formatDate(selected, { weekday: "long" })}</div>
+              <div className="mt-3 -mx-2">
+                {dayEvents.length ? dayEvents.map(row) : <p className="px-2 py-6 text-center text-sm text-gray-400">Nothing scheduled. Tap + Add to plan something for this day.</p>}
               </div>
-              <button className="btn-secondary px-3 text-xs" onClick={() => setEditing("new")}>
-                + Add
-              </button>
-            </div>
-            <div className="mt-3 -mx-2">
-              {dayEvents.length ? dayEvents.map((e) => <EventRow key={e.id} e={e} onOpen={open} />) : <p className="px-2 py-6 text-center text-sm text-gray-400">Nothing scheduled. Tap + Add to plan something for this day.</p>}
-            </div>
+            </Card>
           </aside>
         </div>
       ) : (
-        <section className="card">
+        <Card id="calendar.agenda" title="Coming up" summary={upcoming.length ? `${upcoming.length} dates` : undefined} bodyClassName="mt-2">
           {grouped.length ? (
             <ol className="divide-y divide-gray-100">
               {grouped.map(([date, evs]) => (
@@ -225,9 +276,7 @@ export default function CalendarPage() {
                     <div className="text-xs text-gray-500">{date === now ? "Today" : formatDate(date, { weekday: "long" })}</div>
                   </div>
                   <div className="-mx-2">
-                    {evs.map((e) => (
-                      <EventRow key={e.id} e={e} onOpen={open} />
-                    ))}
+                    {evs.map(row)}
                   </div>
                 </li>
               ))}
@@ -235,8 +284,25 @@ export default function CalendarPage() {
           ) : (
             <p className="py-10 text-center text-gray-400">Nothing coming up. Add an appointment or set due dates on tasks.</p>
           )}
-        </section>
+        </Card>
       )}
+
+      <SelectActions sel={sel} noun="appointment">
+        <div className="grid grid-cols-2 gap-2 text-sm lg:grid-cols-4">
+          <select className={BULK_BTN} aria-label="Set status" value="" onChange={(e) => e.target.value && bulkUpdate({ status: e.target.value as Appointment["status"] }, `Status: ${e.target.value}`)}>
+            <option value="">Status…</option>
+            <option value="scheduled">Scheduled</option>
+            <option value="done">Done</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+          <button type="button" className={BULK_BTN} onClick={bulkHide}>
+            🙈 Hide
+          </button>
+          <button type="button" className={BULK_DANGER} onClick={bulkDelete}>
+            🗑 Delete
+          </button>
+        </div>
+      </SelectActions>
 
       <div className="text-center text-xs text-gray-400">
         Appointments also appear on the <Link href="/" className="underline">dashboard</Link>. Task deadlines come from your <Link href="/tasks" className="underline">checklist</Link>.

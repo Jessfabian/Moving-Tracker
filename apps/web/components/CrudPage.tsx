@@ -6,7 +6,8 @@ import { useTwoPane } from "@/lib/hooks";
 import { useDb } from "@/lib/store-context";
 import { EntityForm } from "./EntityForm";
 import { MediaThumb } from "./Media";
-import { SwipeRow, showUndo, useDeleteWithUndo, useHiddenRows, type SwipeAction } from "./Swipe";
+import { BULK_BTN, BULK_DANGER, SelectableRow, SelectActions, SelectBar, useBulkDelete, useBulkHide, useBulkUpdate, useSelection, type Selection } from "./Selection";
+import { showUndo, useDeleteWithUndo, useHiddenRows, type SwipeAction } from "./Swipe";
 import { Drawer, Empty, PageHeader, SearchField } from "./ui";
 
 type Row = Record<string, unknown>;
@@ -45,6 +46,10 @@ export interface CrudPageProps<T extends TableName> {
   toolbar?: ReactNode;
   /** Rendered after the list (e.g. an archive of ruled-out rows). */
   after?: ReactNode | ((api: CrudApi<T>) => ReactNode);
+  /** Select-type field keys offered as "Set …" pickers while selecting (defaults to `filters`). */
+  bulkFields?: string[];
+  /** Extra page-specific buttons in the selection action bar. */
+  bulkActions?: (b: { sel: Selection; update: (patch: Partial<TableMap[T]>, what?: string) => void }) => ReactNode;
 }
 
 export interface CrudApi<T extends TableName> {
@@ -53,7 +58,7 @@ export interface CrudApi<T extends TableName> {
 }
 
 export function CrudPage<T extends TableName>(props: CrudPageProps<T>) {
-  const { table, columns = [], filters = [], groupBy, groupOrder, groupAction, formTitle, addLabel, sort, where, initial, actions, top, renderBadge, renderDetail, renderCard, emptyText, hideFields, onSaved, drawerForm, viewFirst, toolbar, after } = props;
+  const { table, columns = [], filters = [], groupBy, groupOrder, groupAction, formTitle, addLabel, sort, where, initial, actions, top, renderBadge, renderDetail, renderCard, emptyText, hideFields, onSaved, drawerForm, viewFirst, toolbar, after, bulkFields, bulkActions } = props;
   const schema = SCHEMAS[table];
   const db = useDb();
   const lookup = useMemo(() => makeLookup(db), [db]);
@@ -87,6 +92,13 @@ export function CrudPage<T extends TableName>(props: CrudPageProps<T>) {
     if (needle) out = out.filter((r) => JSON.stringify(r).toLowerCase().includes(needle));
     return sort ? [...out].sort(sort) : [...out].sort((a, b) => String((a as unknown as Row)[schema.titleField] ?? "").localeCompare(String((b as unknown as Row)[schema.titleField] ?? "")));
   }, [all, q, filter, where, sort, schema.titleField, hiddenRows.rows, table]);
+
+  const noun = schema.singular.toLowerCase();
+  const sel = useSelection(rows.map((r) => r.id));
+  const bulkUpdate = useBulkUpdate<TableMap[T]>(table, sel, noun);
+  const bulkDelete = useBulkDelete(table, sel, noun);
+  const bulkHide = useBulkHide(table, sel, (id) => { const r = all.find((x) => x.id === id); return r ? titleOf(r) : schema.singular; }, noun);
+  const setFields = (bulkFields ?? filters).map((k) => schema.fields.find((x) => x.key === k)).filter((f) => f && f.options?.length);
 
   const groups = useMemo(() => {
     if (!groupBy) return [{ key: "", label: "", rows }];
@@ -174,9 +186,9 @@ export function CrudPage<T extends TableName>(props: CrudPageProps<T>) {
           {renderCard ? (
             <div className={`grid gap-4 ${twoPane ? "" : "sm:grid-cols-2"} ${twoPane && !formOpen ? "xl:grid-cols-2" : ""}`}>
               {g.rows.map((r) => (
-                <SwipeRow key={r.id} radius="rounded-[1.25rem] lg:rounded-[1.75rem]" actions={rowActions(r)} label={titleOf(r)}>
+                <SelectableRow key={r.id} sel={sel} id={r.id} radius="rounded-[1.25rem] lg:rounded-[1.75rem]" actions={rowActions(r)} label={titleOf(r)}>
                   {renderCard(r, () => setEditing(r.id))}
-                </SwipeRow>
+                </SelectableRow>
               ))}
             </div>
           ) : (
@@ -186,14 +198,15 @@ export function CrudPage<T extends TableName>(props: CrudPageProps<T>) {
               const media = photoKey ? ((row[photoKey] as TableMap["items"]["photos"]) ?? []) : [];
               return (
                 <li key={r.id}>
-                  <SwipeRow actions={rowActions(r)} label={titleOf(r)}>
+                  <SelectableRow sel={sel} id={r.id} actions={rowActions(r)} label={titleOf(r)}>
                   <button
                     onClick={() => setEditing(r.id)}
-                    className={`group flex w-full items-center gap-4 rounded-2xl border bg-white px-4 py-3.5 text-left transition hover:-translate-y-px hover:shadow-[0_10px_30px_-18px_rgba(13,13,15,0.5)] ${editing === r.id ? "border-ink ring-1 ring-ink" : "border-gray-200/80"}`}
+                    className={`group flex w-full items-center gap-3 rounded-2xl border bg-white px-3 py-3.5 text-left transition hover:-translate-y-px hover:shadow-[0_10px_30px_-18px_rgba(13,13,15,0.5)] sm:gap-4 sm:px-4 ${editing === r.id ? "border-ink ring-1 ring-ink" : "border-gray-200/80"}`}
                   >
-                    {media[0] ? <MediaThumb media={media[0]} className="h-12 w-12" /> : <span className="flex h-11 w-11 flex-none items-center justify-center rounded-xl bg-gray-100 text-lg">{schema.icon}</span>}
+                    {media[0] ? <MediaThumb media={media[0]} className="h-12 w-12" /> : <span className="hidden h-11 w-11 flex-none items-center justify-center rounded-xl bg-gray-100 text-lg sm:flex">{schema.icon}</span>}
                     <div className="min-w-0 flex-1">
                       <div className="truncate font-semibold">{String(row[schema.titleField] || `Untitled ${schema.singular.toLowerCase()}`)}</div>
+                      {renderBadge && <div className="mt-1 sm:hidden">{renderBadge(r)}</div>}
                       <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-gray-500">
                         {columns.map((c) => {
                           const f = schema.fields.find((x) => x.key === c);
@@ -206,10 +219,10 @@ export function CrudPage<T extends TableName>(props: CrudPageProps<T>) {
                         })}
                       </div>
                     </div>
-                    {renderBadge?.(r)}
+                    {renderBadge && <span className="hidden flex-none sm:block">{renderBadge(r)}</span>}
                     <span className="hidden text-gray-300 transition group-hover:translate-x-0.5 group-hover:text-ink sm:block">→</span>
                   </button>
-                  </SwipeRow>
+                  </SelectableRow>
                 </li>
               );
             })}
@@ -273,7 +286,9 @@ export function CrudPage<T extends TableName>(props: CrudPageProps<T>) {
           )}
         </span>
         {toolbar}
+        {!sel.active && <SelectBar sel={sel} noun={noun} />}
       </div>
+      {sel.active && <SelectBar sel={sel} noun={noun} className="mb-3" />}
       {twoPane ? (
         <div className="grid grid-cols-2 gap-7">
           <div className="min-w-0">{list}</div>
@@ -299,6 +314,27 @@ export function CrudPage<T extends TableName>(props: CrudPageProps<T>) {
         list
       )}
       {typeof after === "function" ? after(api) : after}
+      <SelectActions sel={sel} noun={noun}>
+        <div className="grid grid-cols-2 gap-2 text-sm lg:grid-cols-4">
+          {setFields.map((f) => (
+            <select key={f!.key} className={BULK_BTN} aria-label={`Set ${f!.label.toLowerCase()}`} value="" onChange={(e) => e.target.value && bulkUpdate({ [f!.key]: e.target.value } as Partial<TableMap[T]>, `${f!.label}: ${optionLabel(f!.options, e.target.value)}`)}>
+              <option value="">{f!.label}…</option>
+              {f!.options!.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          ))}
+          {bulkActions?.({ sel, update: bulkUpdate })}
+          <button type="button" className={BULK_BTN} onClick={bulkHide}>
+            🙈 Hide
+          </button>
+          <button type="button" className={BULK_DANGER} onClick={bulkDelete}>
+            🗑 Delete
+          </button>
+        </div>
+      </SelectActions>
       <Drawer open={sheetOpen} onClose={close} title={drawerTitle}>
         {sheetOpen && form}
       </Drawer>

@@ -3,7 +3,7 @@
 import type { IScannerControls } from "@zxing/browser";
 import { useEffect, useRef, useState } from "react";
 import { canVibrate, primeScanFeedback, releaseScanFeedback, scanFeedback, setSoundEnabled, soundEnabled } from "./scanFeedback";
-import { Modal } from "./ui";
+import { Modal, Toggle } from "./ui";
 
 /**
  * Camera barcode/QR scanner. In continuous mode it keeps scanning (e.g. a stack of books)
@@ -116,19 +116,17 @@ export function Scanner({
       </div>
       <div className="mt-2 flex items-start justify-between gap-3">
         {hint ? <p className="muted min-w-0">{hint}</p> : <span />}
-        <button
-          type="button"
-          className="seg-btn flex-none rounded-full bg-ink/[0.06] px-3 py-1.5 text-[13px] font-semibold"
-          aria-pressed={sound}
-          onClick={() => {
-            setSoundEnabled(!sound);
-            setSound(!sound);
-            if (sound) releaseScanFeedback();
-            else primeScanFeedback();
+        <Toggle
+          className="w-auto! flex-none"
+          label="🔊 Beep"
+          checked={sound}
+          onChange={(on) => {
+            setSoundEnabled(on);
+            setSound(on);
+            if (on) primeScanFeedback();
+            else releaseScanFeedback();
           }}
-        >
-          {sound ? "🔊 Beep on" : "🔇 Beep off"}
-        </button>
+        />
       </div>
       {last && continuous && <p className="mt-2 text-sm font-medium text-green-700">✓ Scanned {last} — keep going!</p>}
       {open && !canVibrate() && (

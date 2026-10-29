@@ -23,7 +23,7 @@ export default function MovePage() {
     <div className="grid gap-6 lg:grid-cols-3">
       <div className="lg:col-span-2">
         <PageHeader title="Move details" icon="🚚" subtitle="Dates, addresses and logistics. Changing the move date automatically reschedules tasks you haven't started." />
-        <div className="card">
+        <Card id="move.details" title="Dates, addresses & logistics" summary={move.move_date ?? undefined} bodyClassName="mt-3">
           <EntityForm
             key={`${move.id}-${rev}`}
             table="moves"
@@ -36,7 +36,7 @@ export default function MovePage() {
             }}
           />
           {msg && <p className="mt-3 rounded-lg bg-green-50 p-2 text-sm text-green-800">{msg}</p>}
-        </div>
+        </Card>
       </div>
       <aside className="space-y-4 lg:pt-16">
         {from && to && (

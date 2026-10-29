@@ -1,10 +1,12 @@
 "use client";
 
-import { buildReport, DISPOSITION_COLORS, formatMoney, ITEM_CATEGORIES, optionLabel, SALE_STATUSES, SALES_TO_BUDGET, salesForBudget, salesProceeds, sum, type Book, type Item } from "@moving/shared";
+import { buildReport, formatMoney, ITEM_CATEGORIES, optionLabel, SALE_STATUSES, SALES_TO_BUDGET, salesForBudget, salesProceeds, sum, type Book, type Item } from "@moving/shared";
 import { useMemo, useState } from "react";
 import { LivePrices } from "@/components/LivePrices";
 import { MediaThumb } from "@/components/Media";
-import { PageHeader, Segmented, Stat } from "@/components/ui";
+import { BULK_BTN, BULK_DANGER, BULK_PRIMARY, SelectableRow, SelectActions, SelectBar, useSelection } from "@/components/Selection";
+import { showUndo, useHiddenRows } from "@/components/Swipe";
+import { PageHeader, SearchField, Segmented, Stat, Toggle } from "@/components/ui";
 import { printHtml } from "@/lib/media";
 import { useDb, useStore } from "@/lib/store-context";
 
@@ -53,15 +55,72 @@ export default function SellPage() {
   const [tab, setTab] = useState<Tab>("sell");
   const [status, setStatus] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
+  const [q, setQ] = useState("");
+  const hiddenRows = useHiddenRows();
   const move = db.moves[0];
 
-  const entries = useMemo<Entry[]>(
-    () => [
+  const entries = useMemo<Entry[]>(() => {
+    const needle = q.trim().toLowerCase();
+    return [
       ...db.items.filter((i) => i.disposition === tab).map((row) => ({ kind: "items" as const, row })),
       ...db.books.filter((b) => b.disposition === tab).map((row) => ({ kind: "books" as const, row })),
-    ].filter((e) => !status || e.row.sale_status === status),
-    [db.items, db.books, tab, status],
-  );
+    ]
+      .filter((e) => !status || e.row.sale_status === status)
+      .filter((e) => !hiddenRows.rows.some((h) => h.table === e.kind && h.id === e.row.id))
+      .filter((e) => !needle || JSON.stringify(e.row).toLowerCase().includes(needle));
+  }, [db.items, db.books, tab, status, q, hiddenRows.rows]);
+  const hiddenCount = [...db.items, ...db.books].filter((r) => r.disposition === tab && hiddenRows.rows.some((h) => h.id === r.id)).length;
+  const sel = useSelection(entries.map((e) => e.row.id));
+  const nameOf = (e: Entry) => (e.kind === "items" ? e.row.name : e.row.title);
+  const picked = () => entries.filter((e) => sel.has(e.row.id));
+  const plural = (n: number) => `${n} thing${n === 1 ? "" : "s"}`;
+  const bulkPatch = (p: Partial<Item & Book>, what: string) => {
+    const list = picked();
+    if (!list.length) return;
+    const keys = Object.keys(p) as (keyof (Item & Book))[];
+    const before = list.map((e) => ({ e, prev: Object.fromEntries(keys.map((k) => [k, (e.row as Item & Book)[k] ?? null])) }));
+    for (const e of list) store.update(e.kind, e.row.id, p as never, { silent: true });
+    sel.release(list.map((e) => e.row.id));
+    showUndo(`✓ ${what} · ${plural(list.length)}`, () => {
+      for (const b of before) store.update(b.e.kind, b.e.row.id, b.prev as never, { silent: true });
+    });
+  };
+  const bulkHide = () => {
+    const list = picked();
+    if (!list.length) return;
+    const before = hiddenRows.rows;
+    hiddenRows.setAll([...before, ...list.map((e) => ({ table: e.kind, id: e.row.id, label: nameOf(e) }))]);
+    sel.release(list.map((e) => e.row.id));
+    showUndo(`Hid ${plural(list.length)} · find them in Settings`, () => hiddenRows.setAll(before));
+  };
+  const bulkDelete = () => {
+    const list = picked();
+    if (!list.length) return;
+    for (const e of list) store.remove(e.kind, e.row.id);
+    sel.release(list.map((e) => e.row.id));
+    showUndo(`Deleted ${plural(list.length)}`, () => {
+      for (const e of list) store.restore(e.kind, e.row.id);
+    });
+  };
+  const rowActions = (e: Entry) => [
+    {
+      label: "Hide",
+      icon: "🙈",
+      onClick: () => {
+        hiddenRows.hide({ table: e.kind, id: e.row.id, label: nameOf(e) });
+        showUndo(`Hid “${nameOf(e)}” · find it in Settings`, () => hiddenRows.unhide(e.kind, e.row.id));
+      },
+    },
+    {
+      label: "Delete",
+      icon: "🗑",
+      tone: "danger" as const,
+      onClick: () => {
+        store.remove(e.kind, e.row.id);
+        showUndo(`Deleted “${nameOf(e)}”`, () => store.restore(e.kind, e.row.id));
+      },
+    },
+  ];
 
   const sellables = [...db.items.filter((i) => i.disposition === "sell"), ...db.books.filter((b) => b.disposition === "sell")];
   const sold = sellables.filter((s) => s.sale_status === "sold");
@@ -114,16 +173,6 @@ export default function SellPage() {
             { value: "trash", label: `Trash (${count("trash")})` },
           ]}
         />
-        {tab === "sell" && (
-          <select className="input w-auto" value={status} onChange={(e) => setStatus(e.target.value)}>
-            <option value="">Any status</option>
-            {SALE_STATUSES.map((s) => (
-              <option key={s.value} value={s.value}>
-                {s.label}
-              </option>
-            ))}
-          </select>
-        )}
       </div>
       {tab === "sell" && (
         <div className="mb-4 flex flex-wrap gap-2 text-sm">
@@ -135,13 +184,37 @@ export default function SellPage() {
           ))}
         </div>
       )}
+      <div className="mb-4 flex flex-wrap gap-2">
+        <SearchField className="max-w-xs flex-1" placeholder="Search…" value={q} onChange={setQ} />
+        {tab === "sell" && (
+          <select className="input w-auto" aria-label="Filter by sale status" value={status} onChange={(e) => setStatus(e.target.value)}>
+            <option value="">Any status</option>
+            {SALE_STATUSES.map((s) => (
+              <option key={s.value} value={s.value}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+        )}
+        <span className="self-center text-sm text-gray-500">
+          {entries.length} shown
+          {hiddenCount > 0 && (
+            <a href="/settings#hidden" className="ml-1 text-gray-400 underline">
+              · {hiddenCount} hidden
+            </a>
+          )}
+        </span>
+        {!sel.active && <SelectBar sel={sel} noun="thing" />}
+      </div>
+      {sel.active && <SelectBar sel={sel} noun="thing" className="mb-3" />}
 
       <div className="space-y-2">
         {entries.map((e) => {
           const name = e.kind === "items" ? e.row.name : e.row.title;
           const sub = e.kind === "items" ? optionLabel(ITEM_CATEGORIES, e.row.category) : `📚 ${e.row.authors.join(", ")}`;
           return (
-            <div key={e.row.id} className={`card flex flex-wrap items-center gap-3 p-3 ${e.row.sale_status === "sold" ? "opacity-60" : ""}`}>
+            <SelectableRow key={e.row.id} sel={sel} id={e.row.id} label={name} actions={rowActions(e)}>
+            <div className={`card flex flex-wrap items-center gap-3 p-3 ${e.row.sale_status === "sold" ? "opacity-60" : ""}`}>
               {e.kind === "items" && e.row.photos[0] ? (
                 <MediaThumb media={e.row.photos[0]} className="h-14 w-14" />
               ) : e.kind === "books" && e.row.cover_url ? (
@@ -191,10 +264,12 @@ export default function SellPage() {
                   </button>
                 </div>
               ) : (
-                <label className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" className="h-5 w-5" style={{ accentColor: DISPOSITION_COLORS[tab] }} checked={e.row.sale_status === "sold"} onChange={(ev) => patch(e, { sale_status: ev.target.checked ? "sold" : "not_listed" })} />
-                  {tab === "donate" ? "Dropped off" : tab === "give" ? "Given" : "Disposed"}
-                </label>
+                <Toggle
+                  className="w-auto"
+                  label={tab === "donate" ? "Dropped off" : tab === "give" ? "Given" : "Disposed"}
+                  checked={e.row.sale_status === "sold"}
+                  onChange={(v) => patch(e, { sale_status: v ? "sold" : "not_listed" })}
+                />
               )}
               <select className="input w-auto text-xs" value={e.row.disposition} onChange={(ev) => patch(e, { disposition: ev.target.value as Item["disposition"] })} aria-label="Change plan">
                 <option value="sell">Sell</option>
@@ -205,6 +280,7 @@ export default function SellPage() {
                 <option value="undecided">Undecided</option>
               </select>
             </div>
+            </SelectableRow>
           );
         })}
         {!entries.length && (
@@ -213,6 +289,39 @@ export default function SellPage() {
           </p>
         )}
       </div>
+      <SelectActions sel={sel} noun="thing">
+        <div className="grid grid-cols-2 gap-2 text-sm lg:grid-cols-4">
+          {tab === "sell" ? (
+            <select className={BULK_PRIMARY} aria-label="Set sale status" value="" onChange={(ev) => ev.target.value && bulkPatch({ sale_status: ev.target.value as Item["sale_status"] }, optionLabel(SALE_STATUSES, ev.target.value))}>
+              <option value="">Status…</option>
+              {SALE_STATUSES.map((s) => (
+                <option key={s.value} value={s.value}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <button type="button" className={BULK_PRIMARY} onClick={() => bulkPatch({ sale_status: "sold" }, tab === "donate" ? "Dropped off" : tab === "give" ? "Given" : "Disposed")}>
+              ✓ {tab === "donate" ? "Dropped off" : tab === "give" ? "Given" : "Disposed"}
+            </button>
+          )}
+          <select className={BULK_BTN} aria-label="Change plan" value="" onChange={(ev) => ev.target.value && bulkPatch({ disposition: ev.target.value as Item["disposition"] }, `Plan: ${ev.target.value === "move" ? "Keep / move" : ev.target.value}`)}>
+            <option value="">Plan…</option>
+            <option value="sell">Sell</option>
+            <option value="donate">Donate</option>
+            <option value="give">Give</option>
+            <option value="trash">Trash</option>
+            <option value="move">Keep / move</option>
+            <option value="undecided">Undecided</option>
+          </select>
+          <button type="button" className={BULK_BTN} onClick={bulkHide}>
+            🙈 Hide
+          </button>
+          <button type="button" className={BULK_DANGER} onClick={bulkDelete}>
+            🗑 Delete
+          </button>
+        </div>
+      </SelectActions>
     </div>
   );
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { BULK_BTN } from "@/components/Selection";
 import { Card } from "@/components/Swipe";
 import {
   NO_WAGE_TAX_STATES,
@@ -110,9 +111,8 @@ function StipendSetup() {
 
 function MilesExplainer() {
   return (
-    <details className="card">
-      <summary className="cursor-pointer font-display text-lg font-bold tracking-tight">How miles are counted</summary>
-      <div className="mt-3 grid gap-3 text-sm text-gray-600 md:grid-cols-3">
+    <Card id="travel-miles" title="How miles are counted" icon="🎟️" defaultOpen={false} bodyClassName="mt-3">
+      <div className="grid gap-3 text-sm text-gray-600 md:grid-cols-3">
         <p>
           <b className="text-ink">Cash paid</b> is what actually left the bank — for an award ticket that&apos;s just the taxes &amp; fees (often $5.60–$11.20). It counts as fronted until the stipend arrives.
         </p>
@@ -123,7 +123,7 @@ function MilesExplainer() {
           <b className="text-ink">Paying yourselves back:</b> with “pay ourselves back for the miles” on, the miles&apos; value is added to what the stipend covers, so the timeline sets that money aside when the check lands. Turn it off on an item if you&apos;d rather just let the miles go. Mark the item “Covered” once you&apos;ve moved the money.
         </p>
       </div>
-    </details>
+    </Card>
   );
 }
 
@@ -179,16 +179,22 @@ function TripTop({ api }: { api: CrudApi<"travel"> }) {
   return (
     <section className="mb-6 space-y-4">
       <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
-        <div className="card-ink relative overflow-hidden p-6">
-          <div className="flex items-start justify-between gap-2">
-            <div className="eyebrow text-white/50">{tripName}</div>
-            {move && (
+        <Card
+          id="travel-trip"
+          title={tripName}
+          icon="✈️"
+          tone="card-ink"
+          summary={formatMoney(trip.total)}
+          bodyClassName="mt-3"
+          right={
+            move && (
               <button className="text-[11px] text-white/40 underline hover:text-white/80" onClick={() => store.update("moves", move.id, { work_trip: false })} title="Hide the trip section — your trip items are kept">
                 Hide trip section
               </button>
-            )}
-          </div>
-          <div className="mt-3 font-display text-4xl leading-none font-extrabold tracking-[-0.04em]">
+            )
+          }
+        >
+          <div className="font-display text-4xl leading-none font-extrabold tracking-[-0.04em]">
             {trip.start ? (
               <>
                 {formatDate(trip.start)}
@@ -231,7 +237,7 @@ function TripTop({ api }: { api: CrudApi<"travel"> }) {
               </button>
             ))}
           </div>
-        </div>
+        </Card>
 
         <Card id="travel.stipend-costs" title="Stipend vs. trip costs">
           <p className="mt-1 text-xs text-gray-500">We pay up front; the relocation stipend arrives on his paychecks. Amounts are take-home after tax (22% federal + 7.65% Social Security/Medicare{taxState ? ` + ${taxState} state${(NO_WAGE_TAX_STATES as readonly string[]).includes(taxState.toUpperCase()) ? " ($0)" : ""}` : ""}).</p>
@@ -398,6 +404,16 @@ export default function TravelPage() {
       formTitle={(row, init) => (row ? row.title || `Edit ${travelForm(row.kind).noun}` : `New ${travelForm(init?.kind ?? "other").noun}`)}
       sort={(a, b) => (a.start_date ?? "9999").localeCompare(b.start_date ?? "9999") || (a.start_time || "99").localeCompare(b.start_time || "99")}
       initial={{ trip: "First week at the new job", reimbursable: true }}
+      bulkActions={({ update }) => (
+        <>
+          <button type="button" className={BULK_BTN} onClick={() => update({ paid: true }, "Marked paid")}>
+            ✓ Paid
+          </button>
+          <button type="button" className={BULK_BTN} onClick={() => update({ reimbursed: true }, "Marked covered")}>
+            💼 Covered
+          </button>
+        </>
+      )}
       renderDetail={(t) => (t.kind === "flight" ? <FlightTracker flight={t} /> : null)}
       renderCard={(t, open) => (t.kind === "flight" ? <FlightCard t={t} open={open} /> : <StayCard t={t} open={open} />)}
       emptyText="Nothing booked yet — add the flights and the hotel stay separately with the buttons above."

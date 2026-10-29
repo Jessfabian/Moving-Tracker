@@ -4,11 +4,13 @@ import { CATEGORY_ICONS, daysUntil, formatDate, type Task } from "@moving/shared
 import { useState } from "react";
 import { useDb, useStore } from "@/lib/store-context";
 import { EntityForm } from "./EntityForm";
+import { SelectableRow, type Selection } from "./Selection";
+import { showUndo, useDeleteWithUndo, useHiddenRows, type SwipeAction } from "./Swipe";
 import { Drawer } from "./ui";
 
 const PRIORITY: Record<string, string> = { high: "bg-red-500", medium: "bg-amber-400", low: "bg-gray-300" };
 
-export function TaskRow({ task, onOpen, showMember = true }: { task: Task; onOpen: (t: Task) => void; showMember?: boolean }) {
+export function TaskRow({ task, onOpen, showMember = true, sel, actions = [] }: { task: Task; onOpen: (t: Task) => void; showMember?: boolean; sel?: Selection; actions?: SwipeAction[] }) {
   const store = useStore();
   const db = useDb();
   const done = task.status === "done" || task.status === "skipped";
@@ -17,49 +19,76 @@ export function TaskRow({ task, onOpen, showMember = true }: { task: Task; onOpe
   const who = db.family_members.find((m) => m.id === (task.assignee_id ?? task.member_id));
   const pet = db.pets.find((p) => p.id === task.pet_id);
   return (
-    <li className="flex items-start gap-3 px-4 py-3">
-      <input
-        type="checkbox"
-        aria-label={`Mark ${task.title} done`}
-        className="mt-1 h-5 w-5 flex-none cursor-pointer accent-green-600"
-        checked={done}
-        onChange={(e) => store.update("tasks", task.id, { status: e.target.checked ? "done" : "todo" })}
-      />
-      <button className="min-w-0 flex-1 text-left" onClick={() => onOpen(task)}>
-        <div className={`flex items-center gap-2 font-medium ${done ? "text-gray-400 line-through" : ""}`}>
-          <span className={`h-2 w-2 flex-none rounded-full ${PRIORITY[task.priority]}`} title={`${task.priority} priority`} />
-          <span className="truncate">{task.title}</span>
+    <li>
+      <SelectableRow sel={sel} id={task.id} label={task.title} actions={actions} radius="rounded-none">
+        <div className="flex items-start gap-3 bg-white px-4 py-3">
+          <input
+            type="checkbox"
+            aria-label={`Mark ${task.title} done`}
+            className="mt-1 h-5 w-5 flex-none cursor-pointer accent-green-600"
+            checked={done}
+            onChange={(e) => store.update("tasks", task.id, { status: e.target.checked ? "done" : "todo" })}
+          />
+          <button className="min-w-0 flex-1 text-left" onClick={() => onOpen(task)}>
+            <div className={`flex items-center gap-2 font-medium ${done ? "text-gray-400 line-through" : ""}`}>
+              <span className={`h-2 w-2 flex-none rounded-full ${PRIORITY[task.priority]}`} title={`${task.priority} priority`} />
+              <span className="truncate">{task.title}</span>
+            </div>
+            <div className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-gray-500">
+              <span>
+                {CATEGORY_ICONS[task.category]} {task.category.replace("_", " ")}
+              </span>
+              {task.due_date && (
+                <span className={overdue ? "font-semibold text-red-600" : d !== null && d <= 7 && !done ? "font-semibold text-amber-600" : ""}>
+                  📅 {formatDate(task.due_date)}
+                  {!done && d !== null && (overdue ? ` · ${-d}d overdue` : d === 0 ? " · today" : d <= 14 ? ` · in ${d}d` : "")}
+                </span>
+              )}
+              {showMember && who && <span>👤 {who.name}</span>}
+              {pet && <span>🐾 {pet.name}</span>}
+              {task.source === "tailored" && <span className="text-violet-600">✨ tailored</span>}
+              {task.status === "in_progress" && <span className="text-blue-600">⏳ in progress</span>}
+            </div>
+          </button>
         </div>
-        <div className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-gray-500">
-          <span>
-            {CATEGORY_ICONS[task.category]} {task.category.replace("_", " ")}
-          </span>
-          {task.due_date && (
-            <span className={overdue ? "font-semibold text-red-600" : d !== null && d <= 7 && !done ? "font-semibold text-amber-600" : ""}>
-              📅 {formatDate(task.due_date)}
-              {!done && d !== null && (overdue ? ` · ${-d}d overdue` : d === 0 ? " · today" : d <= 14 ? ` · in ${d}d` : "")}
-            </span>
-          )}
-          {showMember && who && <span>👤 {who.name}</span>}
-          {pet && <span>🐾 {pet.name}</span>}
-          {task.source === "tailored" && <span className="text-violet-600">✨ tailored</span>}
-          {task.status === "in_progress" && <span className="text-blue-600">⏳ in progress</span>}
-        </div>
-      </button>
+      </SelectableRow>
     </li>
   );
 }
 
-export function TaskList({ tasks, showMember, empty }: { tasks: Task[]; showMember?: boolean; empty?: string }) {
+/** Task rows with the standard swipe Hide / Delete actions; pass `sel` to make them selectable. Hidden tasks are left out. */
+export function TaskList({ tasks, showMember, empty, sel }: { tasks: Task[]; showMember?: boolean; empty?: string; sel?: Selection }) {
   const [open, setOpen] = useState<Task | null>(null);
   const db = useDb();
+  const hiddenRows = useHiddenRows();
+  const del = useDeleteWithUndo();
   const current = open ? (db.tasks.find((t) => t.id === open.id) ?? null) : null;
+  const visible = tasks.filter((t) => !hiddenRows.isHidden("tasks", t.id));
+  const actionsFor = (t: Task): SwipeAction[] => [
+    {
+      label: "Hide",
+      icon: "🙈",
+      onClick: () => {
+        hiddenRows.hide({ table: "tasks", id: t.id, label: t.title });
+        showUndo(`Hid “${t.title}” · find it in Settings`, () => hiddenRows.unhide("tasks", t.id));
+      },
+    },
+    {
+      label: "Delete",
+      icon: "🗑",
+      tone: "danger",
+      onClick: () => {
+        if (open?.id === t.id) setOpen(null);
+        del("tasks", t.id, `“${t.title}”`);
+      },
+    },
+  ];
   return (
     <>
-      {tasks.length ? (
+      {visible.length ? (
         <ul className="divide-y divide-gray-100 overflow-hidden rounded-2xl border border-gray-200 bg-white">
-          {tasks.map((t) => (
-            <TaskRow key={t.id} task={t} onOpen={setOpen} showMember={showMember} />
+          {visible.map((t) => (
+            <TaskRow key={t.id} task={t} onOpen={setOpen} showMember={showMember} sel={sel} actions={actionsFor(t)} />
           ))}
         </ul>
       ) : (

@@ -26,6 +26,7 @@ import {
   type TableName,
 } from "@moving/shared";
 import { useMemo, useState } from "react";
+import { Toggle } from "./ui";
 import { bookPatch, lookupBook } from "@/lib/books";
 import { fetchListing, geocodeOne } from "@/lib/geo";
 import { imageUrlToMedia } from "@/lib/media";
@@ -151,12 +152,7 @@ export function FieldInput({
         </select>
       );
     case "boolean":
-      return (
-        <label className="flex cursor-pointer items-center gap-2 py-1">
-          <input id={id} type="checkbox" className="h-5 w-5 accent-indigo-600" checked={!!value} onChange={(e) => onChange(e.target.checked)} />
-          <span className="text-sm">{field.label}</span>
-        </label>
-      );
+      return <Toggle label={field.label} checked={!!value} onChange={onChange} />;
     case "member":
     case "pet":
     case "room":

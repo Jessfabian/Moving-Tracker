@@ -26,6 +26,7 @@ import {
 } from "@moving/shared";
 import Link from "next/link";
 import { useMemo, type ReactNode } from "react";
+import { Card } from "@/components/Swipe";
 import { TaskList } from "@/components/TaskList";
 import { useDb } from "@/lib/store-context";
 
@@ -67,19 +68,11 @@ function TileLink({ href, className, children }: { href: string; className: stri
   );
 }
 
-function CardHead({ eyebrow, title, href, cta }: { eyebrow: string; title: ReactNode; href?: string; cta?: string }) {
+function SeeAll({ href, children }: { href: string; children: ReactNode }) {
   return (
-    <div className="mb-4 flex items-end justify-between gap-3">
-      <div>
-        <div className="eyebrow">{eyebrow}</div>
-        <h2 className="mt-1 font-display text-xl font-bold tracking-tight">{title}</h2>
-      </div>
-      {href && (
-        <Link href={href} className="btn-ghost shrink-0 text-xs">
-          {cta ?? "Open"} →
-        </Link>
-      )}
-    </div>
+    <Link href={href} className="btn-ghost min-w-0 px-2 text-xs" aria-label={typeof children === "string" ? children : undefined}>
+      <span className="hidden truncate sm:inline">{children}</span> →
+    </Link>
   );
 }
 
@@ -131,12 +124,18 @@ export default function Dashboard() {
 
       <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-6 xl:grid-cols-12 max-md:[&>*:not(.half)]:col-span-2">
         {/* Hero */}
-        <section className="card-ink relative overflow-hidden p-5 sm:p-8 short:p-5 md:col-span-6 xl:col-span-8">
+        <Card
+          id="home.countdown"
+          tone="card-ink"
+          title={move.title || "Your move"}
+          summary={d === null ? undefined : d > 0 ? `${d} days to go` : d === 0 ? "Moving day!" : `${-d} days since`}
+          className="relative overflow-hidden md:col-span-6 xl:col-span-8"
+          bodyClassName="mt-2"
+        >
           <div className="dot-grid pointer-events-none absolute inset-0 opacity-[0.07]" />
           <div className="relative flex flex-row flex-wrap items-end justify-between gap-4 sm:gap-6">
             <div className="min-w-0">
-              <div className="eyebrow text-white/50">{move.title}</div>
-              <div className="mt-3 flex items-end gap-3">
+              <div className="flex items-end gap-3">
                 <span className="display text-[4.5rem] leading-[0.8] text-lime sm:text-[8rem] short:text-[4.5rem]">{d === null ? "—" : Math.abs(d)}</span>
                 <span className="pb-2 font-display text-xl leading-tight font-semibold text-white/80 sm:text-2xl">
                   {d === null ? (
@@ -182,11 +181,11 @@ export default function Dashboard() {
               </div>
             </Link>
           </div>
-        </section>
+        </Card>
 
         {/* Agenda */}
-        <section className="card flex flex-col md:col-span-6 xl:col-span-4">
-          <CardHead eyebrow="Next 60 days" title="Coming up" href="/calendar" cta="Calendar" />
+        <Card id="home.agenda" title="Coming up" summary={`${events.length} in 60 days`} right={<SeeAll href="/calendar">Calendar</SeeAll>} className="md:col-span-6 xl:col-span-4" bodyClassName="mt-1">
+          <div className="eyebrow mb-3">Next 60 days</div>
           {events.length ? (
             <ul className="-mx-1 flex-1 space-y-1">
               {events.slice(0, 6).map((e) => (
@@ -213,7 +212,7 @@ export default function Dashboard() {
           ) : (
             <p className="flex-1 text-sm text-gray-500">Nothing dated yet — add appointments, tours or a move date.</p>
           )}
-        </section>
+        </Card>
 
         {/* Pastel stat tiles */}
         <TileLink href="/tasks" className={`half min-h-28 sm:min-h-36 md:col-span-3 ${ins.tasks.overdue.length ? "bg-blush" : "bg-sage"}`}>
@@ -252,8 +251,15 @@ export default function Dashboard() {
         </TileLink>
 
         {/* Tasks */}
-        <section className="card md:col-span-6 xl:col-span-7">
-          <CardHead eyebrow={ins.tasks.overdue.length ? `${ins.tasks.overdue.length} overdue` : "Next 14 days"} title="To do next" href="/tasks" cta="Checklist" />
+        <Card
+          id="home.tasks"
+          title="To do next"
+          summary={ins.tasks.overdue.length ? `${ins.tasks.overdue.length} overdue` : `${ins.tasks.upcoming.length} due soon`}
+          right={<SeeAll href="/tasks">Checklist</SeeAll>}
+          className="md:col-span-6 xl:col-span-7"
+          bodyClassName="mt-1"
+        >
+          <div className="eyebrow mb-3">{ins.tasks.overdue.length ? `${ins.tasks.overdue.length} overdue` : "Next 14 days"}</div>
           <TaskList
             tasks={[...ins.tasks.overdue, ...ins.tasks.upcoming].slice(0, 7)}
             empty={move.move_date ? "Nothing due in the next two weeks. 🎉" : "Set your move date to schedule tasks."}
@@ -273,7 +279,7 @@ export default function Dashboard() {
               </div>
             ))}
           </div>
-        </section>
+        </Card>
 
         {/* Money */}
         <div className="flex flex-col gap-4 md:col-span-6 xl:col-span-5">
@@ -299,8 +305,15 @@ export default function Dashboard() {
             </div>
           </Link>
 
-          <section className="card flex-1">
-            <CardHead eyebrow="Keep · sell · donate" title={totalDisp ? `${totalDisp} things decided` : "Decide what goes"} href="/sell" cta="Sell list" />
+          <Card
+            id="home.decide"
+            title={totalDisp ? `${totalDisp} things decided` : "Decide what goes"}
+            summary={ins.sales.potential > 0 ? `${formatMoney(ins.sales.soldValue)} sold` : undefined}
+            right={<SeeAll href="/sell">Sell list</SeeAll>}
+            className="flex-1 [&>section]:h-full"
+            bodyClassName="mt-1"
+          >
+            <div className="eyebrow mb-3">Keep · sell · donate</div>
             {totalDisp ? (
               <>
                 <div className="flex h-3 gap-0.5 overflow-hidden rounded-full">
@@ -335,17 +348,19 @@ export default function Dashboard() {
                 to start deciding what to move, sell or donate.
               </p>
             )}
-          </section>
+          </Card>
         </div>
 
         {/* Apartments */}
-        <section className="card md:col-span-6 xl:col-span-7">
-          <CardHead
-            eyebrow={place ? `Distances to ${place.label}` : "Apartments & rentals"}
-            title={db.apartments.length ? `${db.apartments.length} ${db.apartments.length === 1 ? "place" : "places"} on the list` : "Find your next home"}
-            href="/apartments"
-            cta="Map"
-          />
+        <Card
+          id="home.apartments"
+          title={db.apartments.length ? `${db.apartments.length} ${db.apartments.length === 1 ? "place" : "places"} on the list` : "Find your next home"}
+          summary={db.apartments.length ? `${shortlist.length} shortlisted` : undefined}
+          right={<SeeAll href="/apartments">Map</SeeAll>}
+          className="md:col-span-6 xl:col-span-7"
+          bodyClassName="mt-1"
+        >
+          <div className="eyebrow mb-3">{place ? `Distances to ${place.label}` : "Apartments & rentals"}</div>
           {shortlist.length ? (
             <div className="grid gap-3 sm:grid-cols-2">
               {shortlist.map((a) => {
@@ -381,11 +396,17 @@ export default function Dashboard() {
           ) : (
             <p className="text-sm text-gray-500">Add rentals with their listing links — photos, prices and distance to work fill in automatically.</p>
           )}
-        </section>
+        </Card>
 
         {/* Family */}
-        <section className="card md:col-span-6 xl:col-span-5">
-          <CardHead eyebrow="Family" title={db.family_members.length ? `${db.family_members.length} moving` : "Who's moving?"} href="/family" cta="Profiles" />
+        <Card
+          id="home.family"
+          title={db.family_members.length ? `${db.family_members.length} moving` : "Who's moving?"}
+          right={<SeeAll href="/family">Profiles</SeeAll>}
+          className="md:col-span-6 xl:col-span-5"
+          bodyClassName="mt-1"
+        >
+          <div className="eyebrow mb-3">Family</div>
           {db.family_members.length ? (
             <ul className="space-y-2.5">
               {db.family_members.slice(0, 6).map((m, i) => {
@@ -418,11 +439,17 @@ export default function Dashboard() {
           ) : (
             <p className="text-sm text-gray-500">Add each person to get tasks tailored to them — schools, doctors, jobs, pets.</p>
           )}
-        </section>
+        </Card>
 
         {/* Checklists */}
-        <section className="card md:col-span-3 xl:col-span-4">
-          <CardHead eyebrow="Admin" title="Switch-overs" />
+        <Card
+          id="home.switchovers"
+          title="Switch-overs"
+          summary={ins.documents.needed ? `${ins.documents.needed} papers needed` : undefined}
+          className="md:col-span-3 xl:col-span-4"
+          bodyClassName="mt-1"
+        >
+          <div className="eyebrow mb-3">Admin</div>
           <div className="space-y-4 text-sm">
             {[
               { href: "/utilities", label: "💡 Utilities", ...ins.utilitiesDone },
@@ -443,7 +470,7 @@ export default function Dashboard() {
               <span className={`font-display text-lg font-bold ${ins.documents.needed ? "text-accent" : ""}`}>{ins.documents.needed}</span>
             </Link>
           </div>
-        </section>
+        </Card>
 
         {/* Books */}
         <TileLink href="/books" className="ink-panel min-h-40 bg-ink text-white md:col-span-3 xl:col-span-3">
@@ -457,8 +484,8 @@ export default function Dashboard() {
         </TileLink>
 
         {/* Activity */}
-        <section className="card md:col-span-6 xl:col-span-5">
-          <CardHead eyebrow="Shared with family" title="Recent activity" />
+        <Card id="home.activity" title="Recent activity" summary={activity.length ? `${activity.length} recent` : undefined} className="md:col-span-6 xl:col-span-5" bodyClassName="mt-1">
+          <div className="eyebrow mb-3">Shared with family</div>
           {activity.length ? (
             <ul className="space-y-2 text-sm">
               {activity.map((a) => (
@@ -474,7 +501,7 @@ export default function Dashboard() {
           ) : (
             <p className="text-sm text-gray-500">Changes made by anyone in your family show up here.</p>
           )}
-        </section>
+        </Card>
       </div>
     </div>
   );

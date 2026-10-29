@@ -11,7 +11,8 @@ import { useTwoPane } from "@/lib/hooks";
 import Link from "next/link";
 import { printHtml } from "@/lib/media";
 import { useDb, useStore } from "@/lib/store-context";
-import { SelectActions, SelectBar, SelectCircle, useBulkDelete, useBulkUpdate, useSelection } from "@/components/Selection";
+import { BULK_BTN, BULK_DANGER, BULK_PRIMARY, SelectableRow, SelectActions, SelectBar, useBulkDelete, useBulkHide, useBulkUpdate, useSelection } from "@/components/Selection";
+import { Card, showUndo, useDeleteWithUndo, useHiddenRows } from "@/components/Swipe";
 
 const STATUS_COLORS: Record<string, string> = { empty: "#9ca3af", packing: "#d97706", packed: "#2563eb", loaded: "#7c3aed", delivered: "#0891b2", unpacked: "#16a34a" };
 
@@ -135,14 +136,38 @@ export default function BoxesPage() {
     .map((s) => `${supplies.boxes[s.key]} ${s.name.toLowerCase()}`)
     .join(", ");
 
+  const hiddenRows = useHiddenRows();
+  const del = useDeleteWithUndo();
   const boxes = useMemo(
-    () => [...db.boxes].filter((b) => (!status || b.status === status) && (!roomId || b.room_id === roomId)).sort((a, b) => a.number - b.number),
-    [db.boxes, status, roomId],
+    () => [...db.boxes].filter((b) => (!status || b.status === status) && (!roomId || b.room_id === roomId) && !hiddenRows.rows.some((h) => h.table === "boxes" && h.id === b.id)).sort((a, b) => a.number - b.number),
+    [db.boxes, status, roomId, hiddenRows.rows],
   );
+  const hiddenCount = db.boxes.filter((b) => hiddenRows.isHidden("boxes", b.id)).length;
+  const boxLabel = (b: Box) => `Box #${b.number}${b.label ? ` · ${b.label}` : ""}`;
   const current = db.boxes.find((b) => b.id === selected) ?? null;
   const sel = useSelection(boxes.map((b) => b.id));
   const bulk = useBulkUpdate<Box>("boxes", sel, "box");
   const bulkDelete = useBulkDelete("boxes", sel, "box");
+  const bulkHide = useBulkHide("boxes", sel, (id) => { const b = db.boxes.find((x) => x.id === id); return b ? boxLabel(b) : "Box"; }, "box");
+  const rowActions = (b: Box) => [
+    {
+      label: "Hide",
+      icon: "🙈",
+      onClick: () => {
+        hiddenRows.hide({ table: "boxes", id: b.id, label: boxLabel(b) });
+        showUndo(`Hid “${boxLabel(b)}” · find it in Settings`, () => hiddenRows.unhide("boxes", b.id));
+      },
+    },
+    {
+      label: "Delete",
+      icon: "🗑",
+      tone: "danger" as const,
+      onClick: () => {
+        if (selected === b.id) setSelected(null);
+        del("boxes", b.id, `“${boxLabel(b)}”`);
+      },
+    },
+  ];
   const counts = BOX_STATUSES.map((s) => ({ ...s, n: db.boxes.filter((b) => b.status === s.value).length }));
   const delivered = db.boxes.filter((b) => b.status === "delivered" || b.status === "unpacked").length;
 
@@ -163,18 +188,13 @@ export default function BoxesPage() {
 
   const list = (
     <div className="space-y-2">
-      {boxes.length > 0 && (sel.active ? <SelectBar sel={sel} noun="box" /> : <div className="flex justify-end"><SelectBar sel={sel} /></div>)}
       {boxes.map((b) => {
         const room = db.rooms.find((r) => r.id === b.room_id);
         const n = db.items.filter((i) => i.box_id === b.id).length + db.books.filter((x) => x.box_id === b.id).length;
         return (
-          <div key={b.id} className={`flex items-center gap-3 rounded-2xl border bg-white px-3 py-2 ${sel.has(b.id) ? "border-accent bg-accent/[0.05]! ring-1 ring-accent" : selected === b.id && !sel.active ? "border-indigo-500 ring-1 ring-indigo-500" : "border-gray-200"}`} style={{ borderLeft: `6px solid ${room?.color || "#e5e7eb"}` }}>
-            {sel.active && (
-              <button type="button" role="checkbox" aria-checked={sel.has(b.id)} aria-label={`Select box ${b.number}`} className="-my-2 -ml-1 flex min-h-11 w-9 flex-none items-center justify-center" onClick={() => sel.toggle(b.id)}>
-                <SelectCircle on={sel.has(b.id)} />
-              </button>
-            )}
-            <button className="flex min-w-0 flex-1 items-center gap-3 text-left" onClick={() => (sel.active ? sel.toggle(b.id) : setSelected(b.id))}>
+          <SelectableRow key={b.id} sel={sel} id={b.id} label={boxLabel(b)} actions={rowActions(b)}>
+          <div className={`flex items-center gap-3 rounded-2xl border bg-white px-3 py-2 ${selected === b.id && !sel.active ? "border-indigo-500 ring-1 ring-indigo-500" : "border-gray-200"}`} style={{ borderLeft: `6px solid ${room?.color || "#e5e7eb"}` }}>
+            <button className="flex min-w-0 flex-1 items-center gap-3 text-left" onClick={() => setSelected(b.id)}>
               <span className="w-12 text-xl font-black">#{b.number}</span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate font-semibold">
@@ -189,14 +209,15 @@ export default function BoxesPage() {
               </span>
             </button>
           </div>
+          </SelectableRow>
         );
       })}
       <SelectActions sel={sel} noun="box">
-        <div className="grid grid-cols-2 gap-2 text-sm">
-          <button className="min-h-11 truncate rounded-xl bg-white px-3 font-semibold text-ink" onClick={() => void buildLabelSheet(db, sel.ids, { householdName: db.moves[0]?.title }).then(printHtml)}>
+        <div className="grid grid-cols-2 gap-2 text-sm lg:grid-cols-4">
+          <button type="button" className={BULK_PRIMARY} onClick={() => void buildLabelSheet(db, sel.ids, { householdName: db.moves[0]?.title }).then(printHtml)}>
             🖨️ Print {sel.count || ""} label{sel.count === 1 ? "" : "s"}
           </button>
-          <select className="min-h-11 min-w-0 truncate rounded-xl bg-white/15 px-3" value="" aria-label="Set status" onChange={(e) => e.target.value && bulk({ status: e.target.value as Box["status"] }, optionLabel(BOX_STATUSES, e.target.value))}>
+          <select className={BULK_BTN} value="" aria-label="Set status" onChange={(e) => e.target.value && bulk({ status: e.target.value as Box["status"] }, optionLabel(BOX_STATUSES, e.target.value))}>
             <option value="">Status…</option>
             {BOX_STATUSES.map((s) => (
               <option key={s.value} value={s.value}>
@@ -204,7 +225,7 @@ export default function BoxesPage() {
               </option>
             ))}
           </select>
-          <select className="min-h-11 min-w-0 truncate rounded-xl bg-white/15 px-3" value="" aria-label="Move to room" onChange={(e) => e.target.value && bulk({ room_id: e.target.value }, `Moved to ${db.rooms.find((r) => r.id === e.target.value)?.name ?? "room"}`)}>
+          <select className={BULK_BTN} value="" aria-label="Move to room" onChange={(e) => e.target.value && bulk({ room_id: e.target.value }, `Moved to ${db.rooms.find((r) => r.id === e.target.value)?.name ?? "room"}`)}>
             <option value="">Room…</option>
             {db.rooms.map((r) => (
               <option key={r.id} value={r.id}>
@@ -212,7 +233,10 @@ export default function BoxesPage() {
               </option>
             ))}
           </select>
-          <button className="min-h-11 rounded-xl bg-red-600 px-3 font-semibold" onClick={bulkDelete}>
+          <button type="button" className={BULK_BTN} onClick={bulkHide}>
+            🙈 Hide
+          </button>
+          <button type="button" className={BULK_DANGER} onClick={bulkDelete}>
             🗑 Delete
           </button>
         </div>
@@ -271,7 +295,7 @@ export default function BoxesPage() {
         </button>
       )}
       {db.boxes.length > 0 && (
-        <div className="card mb-4">
+        <Card id="boxes-progress" title="Progress" icon="🚚" summary={`${delivered} of ${db.boxes.length} delivered`} className="mb-4" bodyClassName="mt-3">
           <Progress value={(delivered / db.boxes.length) * 100} color="bg-cyan-600" />
           <div className="mt-2 flex flex-wrap gap-2 text-xs">
             {counts.map((c) => (
@@ -280,10 +304,10 @@ export default function BoxesPage() {
               </button>
             ))}
           </div>
-        </div>
+        </Card>
       )}
-      <div className="mb-4 flex gap-2">
-        <select className="input w-auto" value={roomId} onChange={(e) => setRoomId(e.target.value)}>
+      <div className="mb-4 flex flex-wrap gap-2">
+        <select className="input w-auto" aria-label="Filter by room" value={roomId} onChange={(e) => setRoomId(e.target.value)}>
           <option value="">All rooms</option>
           {db.rooms.map((r) => (
             <option key={r.id} value={r.id}>
@@ -291,7 +315,17 @@ export default function BoxesPage() {
             </option>
           ))}
         </select>
+        <span className="self-center text-sm text-gray-500">
+          {boxes.length} of {db.boxes.length}
+          {hiddenCount > 0 && (
+            <a href="/settings#hidden" className="ml-1 text-gray-400 underline">
+              · {hiddenCount} hidden
+            </a>
+          )}
+        </span>
+        {!sel.active && <SelectBar sel={sel} noun="box" />}
       </div>
+      {sel.active && <SelectBar sel={sel} noun="box" className="mb-3" />}
       {twoPane ? (
         <div className="grid grid-cols-2 gap-7">
           <div>{list}</div>

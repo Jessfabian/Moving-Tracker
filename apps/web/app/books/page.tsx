@@ -11,8 +11,8 @@ import { BulkEdit } from "./BulkEdit";
 import { Scanner } from "@/components/Scanner";
 import { Drawer, Empty, PageHeader, Segmented, SearchField } from "@/components/ui";
 import { useDb, useStore } from "@/lib/store-context";
-import { SwipeRow, showUndo, useDeleteWithUndo, useHiddenRows, type SwipeAction } from "@/components/Swipe";
-import { GroupToggle, SelectActions, SelectBar, SelectCircle, useSelection } from "@/components/Selection";
+import { Card, showUndo, useDeleteWithUndo, useHiddenRows, type SwipeAction } from "@/components/Swipe";
+import { BULK_BTN, BULK_DANGER, BULK_PRIMARY, GroupToggle, SelectableRow, SelectActions, SelectBar, SelectCircle, useBulkDelete, useBulkHide, useSelection } from "@/components/Selection";
 
 type GroupKey = "genre" | "author" | "disposition" | "owner" | "none";
 const QUICK = ["move", "sell", "donate", "give"] as const;
@@ -116,6 +116,8 @@ export default function BooksPage() {
       .sort((a, b) => a.title.localeCompare(b.title));
   }, [db.books, disp, genre, owner, author, q, hiddenRows.rows]);
   const sel = useSelection(books.map((b) => b.id));
+  const bulkHide = useBulkHide("books", sel, (id) => db.books.find((b) => b.id === id)?.title ?? "Book", "book");
+  const bulkDelete = useBulkDelete("books", sel, "book");
   const selecting = sel.active;
   const picked = sel.ids;
   const openBook = (b: Book) => (selecting ? sel.toggle(b.id) : setEditing(b));
@@ -154,7 +156,6 @@ export default function BooksPage() {
         subtitle={`${db.books.length} books · ${db.books.filter((b) => b.disposition === "sell").length} to sell (${formatMoney(sellValue)}) · ${db.books.filter((b) => b.disposition === "donate").length} to donate · ${db.books.filter((b) => b.disposition === "move").length} keeping${moveSize.bookLbs ? ` · ≈ ${moveSize.bookLbs.toLocaleString()} lbs to move (in your mover quote)` : ""}`}
         actions={
           <>
-            {!selecting && tab === "library" && <SelectBar sel={sel} startLabel="Select" />}
             <button className="btn-secondary" onClick={() => setEditing("new")}>
               + Add manually
             </button>
@@ -180,8 +181,8 @@ export default function BooksPage() {
         <SalesLog />
       ) : (
       <>
-      <div className="card mb-5 grid grid-cols-1 gap-x-6 gap-y-1 bg-indigo-50/50 lg:grid-cols-2">
-        <div className="mb-1 text-sm font-semibold text-indigo-900 lg:col-span-2">Scanning defaults — applied to every new book you scan:</div>
+      <Card id="books-scan-defaults" icon="⚙️" title="Scanning defaults" className="mb-5" bodyClassName="mt-2 grid grid-cols-1 gap-x-6 gap-y-1 lg:grid-cols-2" summary={optionLabel(DISPOSITIONS, defaults.disposition)}>
+        <div className="mb-1 text-sm text-gray-500 lg:col-span-2">Applied to every new book you scan:</div>
         <label className="flex min-h-11 min-w-0 items-center justify-between gap-3 text-[15px]">
           Plan
           <select className="ios-popup min-h-9 min-w-0 max-w-[60%] truncate bg-white/80" value={defaults.disposition} onChange={(e) => setDefaults({ ...defaults, disposition: e.target.value as Book["disposition"] })}>
@@ -227,16 +228,21 @@ export default function BooksPage() {
               ))}
           </select>
         </label>
-      </div>
+      </Card>
 
       {log.length > 0 && (
-        <section className="card mb-5">
-          <div className="mb-2 flex items-center justify-between">
-            <h2 className="font-bold">Just scanned</h2>
-            <button className="text-xs text-gray-500" onClick={() => setLog([])}>
+        <Card
+          id="books-just-scanned"
+          title="Just scanned"
+          className="mb-5"
+          bodyClassName="mt-2"
+          summary={`${log.length}`}
+          right={
+            <button className="min-h-8 px-2 text-xs text-gray-500" onClick={() => setLog([])}>
               Clear
             </button>
-          </div>
+          }
+        >
           <ul className="space-y-3">
             {log.slice(0, 8).map((e, i) => {
               const b = e.id ? db.books.find((x) => x.id === e.id) : null;
@@ -254,7 +260,7 @@ export default function BooksPage() {
               );
             })}
           </ul>
-        </section>
+        </Card>
       )}
 
       <div className="@container mb-4 space-y-2">
@@ -343,6 +349,7 @@ export default function BooksPage() {
               </button>
             ))}
           </div>
+          {!selecting && <SelectBar sel={sel} noun="book" className="shrink-0" />}
         </div>
         </div>
       </div>
@@ -363,10 +370,10 @@ export default function BooksPage() {
               {view === "shelf" ? (
                 <div className="grid grid-cols-3 gap-3 @container sm:grid-cols-4 md:grid-cols-6 xl:grid-cols-8">
                   {g.rows.map((b) => (
-                    <button key={b.id} type="button" onClick={() => openBook(b)} className={`relative min-w-0 text-left ${sel.has(b.id) ? "rounded-md ring-2 ring-accent ring-offset-2" : ""}`}>
+                    <button key={b.id} type="button" onClick={() => openBook(b)} role={selecting ? "checkbox" : undefined} aria-checked={selecting ? sel.has(b.id) : undefined} className={`relative min-w-0 text-left ${sel.has(b.id) ? "rounded-md ring-2 ring-accent ring-offset-2" : ""}`}>
                       <Cover book={b} className="aspect-[2/3] h-auto w-full" />
                       <span className="absolute bottom-1 left-1 h-2.5 w-2.5 rounded-full ring-2 ring-white" style={{ background: DISPOSITION_COLORS[b.disposition] }} title={optionLabel(DISPOSITIONS, b.disposition)} />
-                      {selecting && <SelectCircle on={sel.has(b.id)} className="absolute right-1 top-1" />}
+                      {selecting && <SelectCircle on={sel.has(b.id)} className="pointer-events-none absolute left-2 top-2" />}
                       <div className="mt-1 line-clamp-2 text-[12px] font-medium leading-tight">{b.title}</div>
                     </button>
                   ))}
@@ -375,9 +382,8 @@ export default function BooksPage() {
                 <ul className="ios-list divide-y divide-gray-200/70">
                   {g.rows.map((b) => (
                     <li key={b.id}>
-                      <SwipeRow radius="rounded-none" actions={selecting ? [] : rowActions(b)} label={b.title}>
-                      <button type="button" onClick={() => openBook(b)} className={`flex min-h-14 w-full min-w-0 items-center gap-3 bg-white px-3 py-2 text-left ${sel.has(b.id) ? "bg-accent/[0.07]!" : ""}`}>
-                        {selecting && <SelectCircle on={sel.has(b.id)} />}
+                      <SelectableRow sel={sel} id={b.id} radius="rounded-none" actions={rowActions(b)} label={b.title}>
+                      <button type="button" onClick={() => openBook(b)} className="flex min-h-14 w-full min-w-0 items-center gap-3 bg-white px-3 py-2 text-left">
                         <Cover book={b} className="h-12 w-8" tiny />
                         <div className="min-w-0 flex-1">
                           <div className="truncate text-[15px] font-semibold">{b.title}</div>
@@ -387,22 +393,17 @@ export default function BooksPage() {
                           {QUICK_LABEL[b.disposition] ?? optionLabel(DISPOSITIONS, b.disposition)}
                         </span>
                       </button>
-                      </SwipeRow>
+                      </SelectableRow>
                     </li>
                   ))}
                 </ul>
               ) : (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {g.rows.map((b) => {
-                  const on = sel.has(b.id);
                   const sold = b.sale_status === "sold" || b.sale_status === "pending";
                   return (
-                  <div key={b.id} className={`card relative flex flex-col gap-3 p-3 ${on ? "ring-2 ring-accent" : ""}`}>
-                    {selecting && (
-                      <button type="button" aria-label={on ? "Unselect" : "Select"} onClick={() => sel.toggle(b.id)} className="absolute right-1 top-1 z-10 flex h-11 w-11 items-center justify-center">
-                        <SelectCircle on={on} />
-                      </button>
-                    )}
+                  <SelectableRow key={b.id} sel={sel} id={b.id} radius="rounded-[1.25rem] lg:rounded-[1.75rem]" actions={rowActions(b)} label={b.title}>
+                  <div className="card relative flex flex-col gap-3 p-3">
                     <div className="flex min-w-0 gap-3">
                     <button type="button" className="flex-none" onClick={() => openBook(b)}>
                       <Cover book={b} className="h-24 w-16" />
@@ -424,6 +425,7 @@ export default function BooksPage() {
                     </div>
                     <DispButtons book={b} />
                   </div>
+                  </SelectableRow>
                   );
                 })}
               </div>
@@ -441,12 +443,18 @@ export default function BooksPage() {
 
       {tab === "library" && (
         <SelectActions sel={sel} noun="book" summary={sellable.length > 0 && <span className="text-white/70"> · asking {formatMoney(sum(sellable.map(bookAskPrice)))}</span>}>
-          <div className="grid grid-cols-2 gap-2">
-            <button className="btn-primary !bg-white !text-ink" onClick={() => setBulk(true)}>
+          <div className="grid grid-cols-2 gap-2 text-sm lg:grid-cols-4">
+            <button className={BULK_PRIMARY} onClick={() => setBulk(true)}>
               ✏️ Edit {picked.length || ""}
             </button>
-            <button className="btn-accent" disabled={!sellable.length} onClick={() => setSelling(true)}>
+            <button className="min-h-11 min-w-0 truncate rounded-xl bg-accent px-3 font-semibold text-white disabled:opacity-40" disabled={!sellable.length} onClick={() => setSelling(true)}>
               💲 Sell {sellable.length || ""}
+            </button>
+            <button type="button" className={BULK_BTN} onClick={bulkHide}>
+              🙈 Hide
+            </button>
+            <button type="button" className={BULK_DANGER} onClick={bulkDelete}>
+              🗑 Delete
             </button>
           </div>
         </SelectActions>

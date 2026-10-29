@@ -6,8 +6,10 @@ import { useEffect, useState } from "react";
 import { askConfirm } from "@/components/ConfirmSheet";
 import { HiddenSettings } from "@/components/HiddenSettings";
 import { NavPositionPicker } from "@/components/NavPositionPicker";
-import { PageHeader } from "@/components/ui";
+import { Card } from "@/components/Swipe";
+import { PageHeader, Toggle } from "@/components/ui";
 import { idbKV } from "@/lib/kv";
+import { usePrefs, useSystemDark } from "@/lib/prefs";
 import { useApp, useSyncStatus } from "@/lib/store-context";
 
 export default function SettingsPage() {
@@ -45,8 +47,7 @@ export default function SettingsPage() {
       <PageHeader title="Settings & sharing" icon="⚙️" />
       {msg && <p className="rounded-lg bg-gray-100 p-2 text-sm">{msg}</p>}
 
-      <section className="card space-y-3">
-        <h2 className="font-bold">👤 You</h2>
+      <Card id="settings-you" icon="👤" title="You" hideable={false} bodyClassName="mt-3 space-y-3">
         <div>
           <label className="label" htmlFor="dn">
             Your name (shown in activity)
@@ -66,33 +67,22 @@ export default function SettingsPage() {
             </button>
           </div>
         </div>
-      </section>
+      </Card>
 
-      <section className="card space-y-3">
-        <h2 className="font-bold">📱 Navigation bar</h2>
+      <AppearanceSettings />
+
+      <Card id="settings-nav" icon="📱" title="Navigation bar" hideable={false} bodyClassName="mt-3 space-y-3">
         <p className="text-sm text-gray-600">Where the main tabs sit on a phone. Auto puts them on the right edge on phone-width screens (like the closed iPhone Duo) and sideways screens, and at the bottom on the opened Duo held upright. Choose Right side or Bottom to always keep them there on this device.</p>
         <NavPositionPicker />
-      </section>
+      </Card>
 
-
-      <section className="card space-y-4">
-        <h2 className="font-bold">☁️ Storage & family sharing</h2>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <button
-            onClick={() => updateSettings({ mode: "local" })}
-            className={`rounded-xl border-2 p-3 text-left ${settings.mode === "local" ? "border-indigo-600 bg-indigo-50" : "border-gray-200"}`}
-          >
-            <div className="font-semibold">📱 This device only</div>
-            <div className="text-xs text-gray-500">Works offline, no account. Data stays in this browser.</div>
-          </button>
-          <button
-            onClick={() => updateSettings({ mode: "cloud" })}
-            className={`rounded-xl border-2 p-3 text-left ${settings.mode === "cloud" ? "border-indigo-600 bg-indigo-50" : "border-gray-200"}`}
-          >
-            <div className="font-semibold">👨‍👩‍👧 Cloud sync with family</div>
-            <div className="text-xs text-gray-500">Everyone edits the same move on web and phone. Still works offline.</div>
-          </button>
-        </div>
+      <Card id="settings-storage" icon="☁️" title="Storage & family sharing" hideable={false} bodyClassName="mt-3 space-y-4">
+        <Toggle
+          label="Cloud sync with family"
+          description={settings.mode === "cloud" ? "Everyone edits the same move on web and phone. Still works offline." : "Off: works offline with no account, and data stays in this browser."}
+          checked={settings.mode === "cloud"}
+          onChange={(on) => updateSettings({ mode: on ? "cloud" : "local" })}
+        />
         {settings.mode === "cloud" && (
           <div className="space-y-3">
             <details className="rounded-xl border border-gray-200 p-3" open={!settings.supabaseUrl}>
@@ -169,22 +159,20 @@ export default function SettingsPage() {
             )}
           </div>
         )}
-      </section>
+      </Card>
 
-      <section className="card space-y-2">
-        <h2 className="font-bold">🔒 Privacy</h2>
+      <Card id="settings-privacy" icon="🔒" title="Privacy" hideable={false} defaultOpen={false} bodyClassName="mt-3 space-y-2">
         <p className="text-sm text-gray-600">
           {settings.mode === "cloud"
             ? "Your move is stored in your own Supabase project. Only people who join with your invite code can see or change it, and everyone sees the same lists, budget, documents and family details."
             : "Everything stays in this browser on this device. Nothing is sent anywhere unless you turn on cloud sync."}{" "}
           Barcode, ISBN and address lookups send only the code or address you look up. Room scans read photos on this device, unless the cloud photo reader is turned on for your site; then up to 6 photos are sent to it to name the items.
         </p>
-      </section>
+      </Card>
 
       <HiddenSettings />
 
-      <section className="card space-y-3 border-red-200">
-        <h2 className="font-bold text-red-700">Danger zone</h2>
+      <Card id="settings-danger" title={<span className="text-red-700">Danger zone</span>} hideable={false} defaultOpen={false} className="ring-1 ring-red-200" bodyClassName="mt-3 space-y-3">
         <p className="text-sm text-gray-500">
           {settings.mode === "local" ? "Erase all moving data stored on this device." : "Clear this device's offline copy and re-download from the cloud (shared data is not deleted)."}
         </p>
@@ -205,7 +193,25 @@ export default function SettingsPage() {
         >
           {settings.mode === "local" ? "Erase all data" : "Reset offline copy"}
         </button>
-      </section>
+      </Card>
     </div>
+  );
+}
+
+function AppearanceSettings() {
+  const { theme, setTheme, swipeCards, setSwipeCards, swipeRows, setSwipeRows } = usePrefs();
+  const systemDark = useSystemDark();
+  const dark = theme === "dark" || (theme === "auto" && systemDark);
+  return (
+    <>
+      <Card id="settings-appearance" icon="🌗" title="Appearance" hideable={false} summary={theme === "auto" ? "Automatic" : dark ? "Dark" : "Light"} bodyClassName="mt-2 divide-y divide-ink/5">
+        <Toggle label="Dark mode" description={theme === "auto" ? "Following your phone right now." : undefined} checked={dark} onChange={(on) => setTheme(on ? "dark" : "light")} />
+        <Toggle label="Match my phone automatically" description="Switch between light and dark whenever your phone does." checked={theme === "auto"} onChange={(on) => setTheme(on ? "auto" : dark ? "dark" : "light")} />
+      </Card>
+      <Card id="settings-gestures" icon="👆" title="Gestures" hideable={false} bodyClassName="mt-2 divide-y divide-ink/5">
+        <Toggle label="Swipe to hide cards" description="Swipe left (or press and hold) on a card's title to hide it. Off: cards only fold up when tapped." checked={swipeCards} onChange={setSwipeCards} />
+        <Toggle label="Swipe actions on lists" description="Swipe left (or press and hold) on a row for Hide and Delete. Off: use Select to hide or delete." checked={swipeRows} onChange={setSwipeRows} />
+      </Card>
+    </>
   );
 }

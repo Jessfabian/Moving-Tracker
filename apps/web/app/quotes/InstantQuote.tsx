@@ -14,6 +14,7 @@ import {
 import Link from "next/link";
 import { Card } from "@/components/Swipe";
 import { useState } from "react";
+import { Toggle } from "@/components/ui";
 import { useDb, useStore } from "@/lib/store-context";
 
 /** One-click indicative price from a carrier with a free public quote API. Sends ZIPs, date and sizes only. */
@@ -80,13 +81,7 @@ export function InstantQuoteCard({ size, estimates }: { size: MoveSize; estimate
               ["guaranteedDelivery", "Guaranteed delivery date", !!opts.guaranteedDelivery],
             ] as const
           ).map(([key, label, checked, hint]) => (
-            <label key={key} className="flex min-h-11 items-center gap-3 px-3.5 py-2">
-              <span className="min-w-0 flex-1">
-                {label}
-                {hint && <span className="block text-[13px] text-gray-500">{hint}</span>}
-              </span>
-              <input type="checkbox" checked={checked} onChange={(e) => set({ [key]: e.target.checked })} />
-            </label>
+            <Toggle key={key} className="px-3.5" label={label} description={hint} checked={checked} onChange={(v) => set({ [key]: v })} />
           ))}
           <label className="flex min-h-11 items-center gap-3 px-3.5 py-1.5">
             <span className="flex-1">Flights of stairs</span>

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { MOBILE_TABS, NAV_GROUPS } from "@/lib/nav";
+import { ThemeController } from "@/lib/prefs";
 import { useApp, useDb, useSyncStatus } from "@/lib/store-context";
 import { CloudGate } from "./CloudGate";
 import { ConfirmHost } from "./ConfirmSheet";
@@ -135,6 +136,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <SyncToaster />
       <UndoToast />
       <ConfirmHost />
+      <ThemeController />
       <PullToRefresh />
       <div className="flex min-h-screen">
         <aside className="sticky top-0 hidden h-screen w-[16.5rem] flex-none flex-col gap-6 ink-panel overflow-y-auto bg-ink px-4 py-5 text-white lg:flex [&>*]:flex-none">

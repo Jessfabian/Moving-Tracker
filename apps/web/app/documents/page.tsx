@@ -16,6 +16,8 @@ import {
 import { useRef, useState } from "react";
 import { CrudPage, StatusPill } from "@/components/CrudPage";
 import { EntityForm } from "@/components/EntityForm";
+import { BULK_BTN, BULK_DANGER, SelectableRow, SelectActions, SelectBar, useBulkDelete, useBulkHide, useBulkUpdate, useSelection } from "@/components/Selection";
+import { Card, showUndo, useDeleteWithUndo, useHiddenRows } from "@/components/Swipe";
 import { MediaLightbox, MediaThumb } from "@/components/Media";
 import { Drawer, PageHeader, Segmented } from "@/components/ui";
 import { compressImage, download } from "@/lib/media";
@@ -128,7 +130,7 @@ function DocRow({ d, member, onEdit, onPreview }: { d: DocumentRow; member?: str
   };
   const next = d.status === "needed" ? "requested" : d.status === "requested" ? "received" : d.status === "received" ? "filed" : "needed";
   return (
-    <li className="flex flex-wrap items-center gap-3 py-3">
+    <div className="flex flex-wrap items-center gap-3 bg-white py-3">
       <button
         title={`Mark ${next}`}
         onClick={() => store.update("documents", d.id, { status: next })}
@@ -153,13 +155,16 @@ function DocRow({ d, member, onEdit, onPreview }: { d: DocumentRow; member?: str
         {busy ? "Saving…" : "📎 Attach PDF"}
       </button>
       <input ref={fileRef} type="file" accept="application/pdf,image/*" multiple className="hidden" onChange={(e) => void attach(e.target.files).then(() => (e.target.value = ""))} />
-    </li>
+    </div>
   );
 }
 
-function FolderView({ folder, docs, onBack }: { folder: string; docs: DocumentRow[]; onBack: () => void }) {
+function FolderView({ folder, docs: allDocs, onBack }: { folder: string; docs: DocumentRow[]; onBack: () => void }) {
   const db = useDb();
   const store = useStore();
+  const hiddenRows = useHiddenRows();
+  const del = useDeleteWithUndo();
+  const docs = allDocs.filter((d) => !hiddenRows.isHidden("documents", d.id));
   const resolveUrl = useResolveUrl();
   const [editing, setEditing] = useState<DocumentRow | "new" | null>(null);
   const [preview, setPreview] = useState<MediaRef | null>(null);
@@ -172,6 +177,29 @@ function FolderView({ folder, docs, onBack }: { folder: string; docs: DocumentRo
   const missingTpl = tpl ? folderTemplateRows(tpl, db.family_members, db.documents.map((d) => ({ ...d, folder: folderOf(d) }))) : [];
   const sorted = [...docs].sort((a, b) => Number(a.status === "filed" || a.status === "received") - Number(b.status === "filed" || b.status === "received") || a.title.localeCompare(b.title));
   const name = optionLabel(DOC_FOLDERS, folder);
+  const sel = useSelection(sorted.map((d) => d.id));
+  const bulkUpdate = useBulkUpdate<DocumentRow>("documents", sel, "document");
+  const bulkDelete = useBulkDelete("documents", sel, "document");
+  const bulkHide = useBulkHide("documents", sel, (id) => db.documents.find((d) => d.id === id)?.title ?? "Document", "document");
+  const docActions = (d: DocumentRow) => [
+    {
+      label: "Hide",
+      icon: "🙈",
+      onClick: () => {
+        hiddenRows.hide({ table: "documents", id: d.id, label: d.title });
+        showUndo(`Hid “${d.title}” · find it in Settings`, () => hiddenRows.unhide("documents", d.id));
+      },
+    },
+    {
+      label: "Delete",
+      icon: "🗑",
+      tone: "danger" as const,
+      onClick: () => {
+        if (editing !== "new" && editing?.id === d.id) setEditing(null);
+        del("documents", d.id, `“${d.title}”`);
+      },
+    },
+  ];
 
   const compile = async () => {
     setBusy(true);
@@ -223,9 +251,11 @@ function FolderView({ folder, docs, onBack }: { folder: string; docs: DocumentRo
         <button className="btn-accent" disabled={busy || !docs.length} onClick={() => void compile()}>
           {busy ? "Compiling…" : "📥 Download file as one PDF"}
         </button>
+        {!sel.active && <SelectBar sel={sel} noun="document" />}
       </div>
+      {sel.active && <SelectBar sel={sel} noun="document" className="mb-3" />}
       {msg && <p className="mb-4 rounded-xl bg-sage/70 p-3 text-sm">{msg}</p>}
-      <div className="card">
+      <Card id="docs-folder-list" title="Documents" icon="📄" summary={`${s.ready}/${s.total} ready`} bodyClassName="mt-2">
         {docs.length === 0 ? (
           <div className="py-10 text-center text-sm text-gray-500">
             This file is empty. {tpl ? "Add the checklist to see exactly what you need." : "Add your first document."}
@@ -233,11 +263,41 @@ function FolderView({ folder, docs, onBack }: { folder: string; docs: DocumentRo
         ) : (
           <ul className="divide-y divide-ink/5">
             {sorted.map((d) => (
-              <DocRow key={d.id} d={d} member={memberName(d.member_id)} onEdit={() => setEditing(d)} onPreview={setPreview} />
+              <li key={d.id}>
+                <SelectableRow sel={sel} id={d.id} label={d.title} actions={docActions(d)} radius="rounded-xl">
+                  <DocRow d={d} member={memberName(d.member_id)} onEdit={() => setEditing(d)} onPreview={setPreview} />
+                </SelectableRow>
+              </li>
             ))}
           </ul>
         )}
-      </div>
+      </Card>
+      <SelectActions sel={sel} noun="document">
+        <div className="grid grid-cols-2 gap-2 text-sm lg:grid-cols-4">
+          <select className={BULK_BTN} aria-label="Set status" value="" onChange={(e) => e.target.value && bulkUpdate({ status: e.target.value as DocumentRow["status"] }, `Status: ${optionLabel(STATUS_OPTS, e.target.value)}`)}>
+            <option value="">Status…</option>
+            {STATUS_OPTS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+          <select className={BULK_BTN} aria-label="Move to file" value="" onChange={(e) => e.target.value && bulkUpdate({ folder: e.target.value as DocumentRow["folder"] }, `Moved to ${optionLabel(DOC_FOLDERS, e.target.value)}`)}>
+            <option value="">Move to file…</option>
+            {DOC_FOLDERS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+          <button type="button" className={BULK_BTN} onClick={bulkHide}>
+            🙈 Hide
+          </button>
+          <button type="button" className={BULK_DANGER} onClick={bulkDelete}>
+            🗑 Delete
+          </button>
+        </div>
+      </SelectActions>
       <p className="mt-3 text-xs text-gray-500">Tip: tap the circle to advance status (needed → requested → received → filed). Attaching a PDF marks it received.</p>
       <Drawer open={!!editing} onClose={() => setEditing(null)} title={editing === "new" ? `Add to ${name}` : editing ? editing.title : ""}>
         {editing && (
@@ -286,10 +346,9 @@ function FilesView({ view, setView }: { view: "files" | "list"; setView: (v: "fi
       ) : (
         <>
           <div className="mb-5 grid gap-4 lg:grid-cols-[1.4fr_1fr]">
-            <div className="card-ink flex flex-wrap items-center gap-6 p-6">
+            <Card id="docs-overview" title="All paperwork" icon="🗂️" tone="card-ink" summary={`${all.pct}%`} bodyClassName="mt-3 flex flex-wrap items-center gap-6">
               <div>
-                <div className="eyebrow text-white/50">All paperwork</div>
-                <div className="font-display mt-2 text-6xl leading-none font-extrabold tracking-[-0.05em] text-lime">{all.pct}%</div>
+                <div className="font-display text-6xl leading-none font-extrabold tracking-[-0.05em] text-lime">{all.pct}%</div>
                 <div className="mt-1 text-sm text-white/60">
                   {all.ready} of {all.total} documents in hand · {all.withFiles} with scans/PDFs
                 </div>
@@ -299,11 +358,10 @@ function FilesView({ view, setView }: { view: "files" | "list"; setView: (v: "fi
                 <div>🗂️ Every document lives in a file (folder).</div>
                 <div>📥 Download any file as a single PDF to email a leasing office or HR.</div>
               </div>
-            </div>
-            <div className="card">
-              <div className="eyebrow">Expiring soon</div>
+            </Card>
+            <Card id="docs-expiring" title="Expiring soon" icon="⏰" summary={expiring.length ? `${expiring.length}` : undefined} bodyClassName="mt-2">
               {expiring.length ? (
-                <ul className="mt-2 space-y-1.5 text-sm">
+                <ul className="space-y-1.5 text-sm">
                   {expiring.map((d) => (
                     <li key={d.id} className="flex justify-between gap-2">
                       <span className="truncate">{d.title}</span>
@@ -312,9 +370,9 @@ function FilesView({ view, setView }: { view: "files" | "list"; setView: (v: "fi
                   ))}
                 </ul>
               ) : (
-                <p className="mt-2 text-sm text-gray-500">No upcoming expirations. Add expiry dates to IDs, leases and insurance to be reminded.</p>
+                <p className="text-sm text-gray-500">No upcoming expirations. Add expiry dates to IDs, leases and insurance to be reminded.</p>
               )}
-            </div>
+            </Card>
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {folders.map((f) => {

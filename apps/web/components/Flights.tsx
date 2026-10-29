@@ -23,7 +23,7 @@ import {
 } from "@moving/shared";
 import { useEffect, useMemo, useState } from "react";
 import { MapView, type MapLine, type MapPin } from "./MapView";
-import { Drawer } from "./ui";
+import { Drawer, Toggle } from "./ui";
 import { useDb, useStore } from "@/lib/store-context";
 
 type Row = Record<string, unknown>;
@@ -612,12 +612,13 @@ export function ImportBooking({ open, onClose, trip, memberId, year }: { open: b
               </p>
             )}
             {existing.length > 0 && parsed.flights.length > 0 && (
-              <label className="flex items-start gap-2 rounded-2xl bg-amber-50 p-3 text-sm text-amber-900">
-                <input type="checkbox" className="mt-1" checked={replace} onChange={(e) => setReplace(e.target.checked)} />
-                <span>
-                  Replace the {existing.length} flight{existing.length === 1 ? "" : "s"} already on this trip ({existing.map((t) => t.title || routeTitle(t.airline ?? "", t.flight_number ?? "", t.origin, t.destination)).join(", ")}) with this booking
-                </span>
-              </label>
+              <div className="rounded-2xl bg-amber-50 px-3 py-1 text-amber-900">
+                <Toggle
+                  checked={replace}
+                  onChange={setReplace}
+                  label={`Replace the ${existing.length} flight${existing.length === 1 ? "" : "s"} already on this trip (${existing.map((t) => t.title || routeTitle(t.airline ?? "", t.flight_number ?? "", t.origin, t.destination)).join(", ")}) with this booking`}
+                />
+              </div>
             )}
             <button className="btn-primary w-full" onClick={add} disabled={!parsed.flights.length}>
               Add {parsed.flights.length} flight{parsed.flights.length === 1 ? "" : "s"}

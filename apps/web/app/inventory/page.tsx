@@ -12,8 +12,8 @@ import { Scanner } from "@/components/Scanner";
 import { Drawer, Empty, PageHeader, SearchField } from "@/components/ui";
 import { compressImage } from "@/lib/media";
 import { useDb, useStore } from "@/lib/store-context";
-import { SwipeRow, showUndo, useDeleteWithUndo, useHiddenRows, type SwipeAction } from "@/components/Swipe";
-import { SelectActions, SelectBar, SelectCircle, useBulkDelete, useBulkUpdate, useSelection } from "@/components/Selection";
+import { Card, SwipeRow, showUndo, useDeleteWithUndo, useHiddenRows, type SwipeAction } from "@/components/Swipe";
+import { BULK_BTN, SelectActions, SelectBar, SelectCircle, useBulkDelete, useBulkHide, useBulkUpdate, useSelection } from "@/components/Selection";
 
 type Editing = { row: Item | null; initial?: Partial<Item> } | null;
 
@@ -56,6 +56,7 @@ export default function InventoryPage() {
   const sel = useSelection(items.map((i) => i.id));
   const bulk = useBulkUpdate<Item>("items", sel);
   const bulkDelete = useBulkDelete("items", sel);
+  const bulkHide = useBulkHide("items", sel, (id) => db.items.find((i) => i.id === id)?.name ?? "Item");
   const tapItem = (i: Item) => (sel.active ? sel.toggle(i.id) : setEditing({ row: i }));
 
   const defaults = (): Partial<Item> => ({ room_id: roomId && roomId !== "none" ? roomId : null });
@@ -136,7 +137,8 @@ export default function InventoryPage() {
       <input ref={photoRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => void onPhotos(e.target.files).then(() => (e.target.value = ""))} />
       {busy && <p className="mb-3 rounded-lg bg-indigo-50 p-2 text-sm text-indigo-800">{busy}</p>}
 
-      <div className="no-scrollbar -mx-4 mb-5 flex gap-3 overflow-x-auto px-4 pb-2 sm:mx-0 sm:grid sm:grid-cols-3 sm:overflow-visible sm:px-0 lg:grid-cols-4 xl:grid-cols-5">
+      <Card id="inventory-rooms" icon="🏠" title="Rooms" tone="plain" className="mb-5" bodyClassName="mt-2" summary={room ? room.name : roomId === "none" ? "No room" : "Whole house"}>
+      <div className="no-scrollbar -mx-4 flex gap-3 overflow-x-auto px-4 pb-2 sm:mx-0 sm:grid sm:grid-cols-3 sm:overflow-visible sm:px-0 lg:grid-cols-4 xl:grid-cols-5">
         <button onClick={() => setRoomId("")} className={`card min-w-36 flex-none py-3 text-left ${roomId === "" ? "ring-2 ring-indigo-500" : ""}`}>
           <div className="font-bold">🏠 Whole house</div>
           <div className="text-xs text-gray-500">
@@ -162,6 +164,7 @@ export default function InventoryPage() {
           </button>
         )}
       </div>
+      </Card>
 
       {room && (
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
@@ -177,9 +180,9 @@ export default function InventoryPage() {
         </div>
       )}
 
-      <div className="card mb-4">
-        <label className="label" htmlFor="quick">
-          ⚡ Quick add{room ? ` to ${room.name}` : ""}
+      <Card id="inventory-quick-add" icon="⚡" title={`Quick add${room ? ` to ${room.name}` : ""}`} className="mb-4" bodyClassName="mt-2">
+        <label className="sr-only" htmlFor="quick">
+          Quick add{room ? ` to ${room.name}` : ""}
         </label>
         <div className="flex items-start gap-2">
           <textarea id="quick" rows={1} className="input min-w-0 flex-1 resize-none" value={quick} onChange={(e) => setQuick(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), quickAdd())} placeholder="Sofa, 2x lamp" />
@@ -187,7 +190,7 @@ export default function InventoryPage() {
             Add
           </button>
         </div>
-      </div>
+      </Card>
 
       <div className="mb-4 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
         <select
@@ -387,6 +390,9 @@ export default function InventoryPage() {
                 </option>
               ))}
           </select>
+          <button type="button" className={BULK_BTN} onClick={bulkHide}>
+            🙈 Hide
+          </button>
           <button className="min-h-11 rounded-xl bg-red-600 px-3 font-semibold" onClick={bulkDelete}>
             🗑 Delete
           </button>

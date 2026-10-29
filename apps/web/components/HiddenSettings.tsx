@@ -4,7 +4,7 @@ import { SCHEMAS, formatDate, personName } from "@moving/shared";
 import Link from "next/link";
 import { useState } from "react";
 import { useDb, useStore, useSyncStatus } from "@/lib/store-context";
-import { showUndo, useHiddenCards, useHiddenRows } from "./Swipe";
+import { Card, showUndo, useHiddenCards, useHiddenRows } from "./Swipe";
 
 const PAGE_NAMES: Record<string, string> = { "/": "Dashboard" };
 const pageName = (href: string) => PAGE_NAMES[href] ?? href.replace(/^\//, "").replace(/[-/]/g, " ").replace(/^\w/, (c) => c.toUpperCase());
@@ -23,9 +23,9 @@ export function HiddenSettings() {
 
   return (
     <>
-      <section id="hidden" className="card scroll-mt-4 space-y-3">
-        <h2 className="font-bold">🙈 Hidden cards &amp; items</h2>
-        <p className="text-sm text-gray-600">Swipe left (or press and hold) on any card or list item and tap Hide to tuck it away. Tap a card&apos;s title to fold it up instead. Everything you&apos;ve hidden on this device is listed here.</p>
+      <div id="hidden" className="scroll-mt-4">
+      <Card id="settings-hidden" icon="🙈" title="Hidden cards & items" hideable={false} summary={cards.cards.length + rows.rows.length || undefined} bodyClassName="mt-3 space-y-3">
+        <p className="text-sm text-gray-600">Swipe left (or press and hold) on any card or list item and tap Hide, or Select several and tap Hide, to tuck them away. Tap a card&apos;s title to fold it up instead. Everything you&apos;ve hidden on this device is listed here.</p>
         {!cards.cards.length && !rows.rows.length ? (
           <p className="rounded-2xl bg-ink/5 p-3 text-sm text-gray-500">Nothing hidden.</p>
         ) : (
@@ -81,10 +81,11 @@ export function HiddenSettings() {
             </button>
           </>
         )}
-      </section>
+      </Card>
+      </div>
 
-      <section id="deleted" className="card scroll-mt-4 space-y-3">
-        <h2 className="font-bold">🗑 Recently deleted</h2>
+      <div id="deleted" className="scroll-mt-4">
+      <Card id="settings-deleted" icon="🗑" title="Recently deleted" hideable={false} summary={deleted.length || undefined} bodyClassName="mt-3 space-y-3">
         <p className="text-sm text-gray-600">Deleted something by mistake? Anything deleted in the last 30 days can be put back{status?.mode === "cloud" ? " — for everyone sharing the move" : ""}.</p>
         {deleted.length ? (
           <>
@@ -121,7 +122,8 @@ export function HiddenSettings() {
         ) : (
           <p className="rounded-2xl bg-ink/5 p-3 text-sm text-gray-500">Nothing deleted recently.</p>
         )}
-      </section>
+      </Card>
+      </div>
     </>
   );
 }

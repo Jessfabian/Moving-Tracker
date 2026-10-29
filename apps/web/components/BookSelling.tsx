@@ -22,6 +22,8 @@ import { useMemo, useState } from "react";
 import { EntityForm } from "@/components/EntityForm";
 import { LivePrices } from "@/components/LivePrices";
 import { StatusPill } from "@/components/CrudPage";
+import { BULK_BTN, BULK_DANGER, SelectableRow, SelectActions, SelectBar, useBulkDelete, useBulkHide, useBulkUpdate, useSelection } from "@/components/Selection";
+import { showUndo, useDeleteWithUndo, useHiddenRows } from "@/components/Swipe";
 import { Drawer, Empty } from "@/components/ui";
 import { printHtml } from "@/lib/media";
 import { useDb, useStore } from "@/lib/store-context";
@@ -330,10 +332,17 @@ export function SalesLog() {
   const db = useDb();
   const store = useStore();
   const [editing, setEditing] = useState<BookSale | null>(null);
-  const sales = [...db.book_sales].sort((a, b) => (b.sale_date ?? b.created_at).localeCompare(a.sale_date ?? a.created_at));
+  const hiddenRows = useHiddenRows();
+  const del = useDeleteWithUndo();
+  const sales = [...db.book_sales].filter((s) => !hiddenRows.isHidden("book_sales", s.id)).sort((a, b) => (b.sale_date ?? b.created_at).localeCompare(a.sale_date ?? a.created_at));
   const live = sales.filter((s) => s.status !== "cancelled");
   const toShip = live.filter((s) => s.status === "paid" || s.status === "packed").length;
   const current = editing ? (db.book_sales.find((s) => s.id === editing.id) ?? null) : null;
+  const sel = useSelection(sales.map((s) => s.id));
+  const saleLabel = (s: BookSale) => `${s.buyer_name || "Buyer"} sale`;
+  const bulkUpdate = useBulkUpdate<BookSale>("book_sales", sel, "sale");
+  const bulkDelete = useBulkDelete("book_sales", sel, "sale");
+  const bulkHide = useBulkHide("book_sales", sel, (id) => { const s = db.book_sales.find((x) => x.id === id); return s ? saleLabel(s) : "Sale"; }, "sale");
 
   if (!sales.length)
     return (
@@ -362,12 +371,38 @@ export function SalesLog() {
           <div className="text-2xl font-bold">{formatMoney(live.reduce((a, s) => a + (s.postage ?? 0), 0))}</div>
         </div>
       </div>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs text-gray-500">
+          {sales.length} sale{sales.length === 1 ? "" : "s"}
+        </span>
+        {!sel.active && <SelectBar sel={sel} noun="sale" />}
+      </div>
+      {sel.active && <SelectBar sel={sel} noun="sale" className="mb-3" />}
       <ul className="space-y-2">
         {sales.map((s) => {
           const books = db.books.filter((b) => s.book_ids.includes(b.id));
           const ch = channelById(s.channel);
+          const label = saleLabel(s);
           return (
-            <li key={s.id} className="card flex flex-wrap items-center gap-3 p-3">
+            <li key={s.id}>
+            <SelectableRow
+              sel={sel}
+              id={s.id}
+              label={label}
+              radius="rounded-[1.75rem]"
+              actions={[
+                {
+                  label: "Hide",
+                  icon: "🙈",
+                  onClick: () => {
+                    hiddenRows.hide({ table: "book_sales", id: s.id, label });
+                    showUndo(`Hid “${label}” · find it in Settings`, () => hiddenRows.unhide("book_sales", s.id));
+                  },
+                },
+                { label: "Delete", icon: "🗑", tone: "danger", onClick: () => del("book_sales", s.id, `“${label}”`) },
+              ]}
+            >
+            <div className="card flex flex-wrap items-center gap-3 p-3">
               <div className="flex -space-x-3">
                 {books.slice(0, 4).map((b) =>
                   b.cover_url ? (
@@ -408,10 +443,30 @@ export function SalesLog() {
                   </button>
                 )}
               </div>
+            </div>
+            </SelectableRow>
             </li>
           );
         })}
       </ul>
+      <SelectActions sel={sel} noun="sale">
+        <div className="grid grid-cols-2 gap-2 text-sm lg:grid-cols-4">
+          <select className="input" value="" aria-label="Set status" onChange={(e) => e.target.value && bulkUpdate({ status: e.target.value as BookSale["status"] }, "Status")}>
+            <option value="">Status…</option>
+            {BOOK_SALE_STATUSES.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+          <button type="button" className={BULK_BTN} onClick={bulkHide}>
+            🙈 Hide
+          </button>
+          <button type="button" className={BULK_DANGER} onClick={bulkDelete}>
+            🗑 Delete
+          </button>
+        </div>
+      </SelectActions>
       <Drawer open={!!current} onClose={() => setEditing(null)} title={`Sale — ${optionLabel(BOOK_SALE_STATUSES, current?.status ?? "")}`}>
         {current && (
           <EntityForm

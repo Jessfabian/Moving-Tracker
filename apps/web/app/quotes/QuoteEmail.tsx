@@ -20,6 +20,7 @@ import {
   type QuoteSection,
 } from "@moving/shared";
 import { useMemo, useState, useSyncExternalStore } from "react";
+import { SwitchKnob, Toggle } from "@/components/ui";
 import { download } from "@/lib/media";
 import { askConfirm } from "@/components/ConfirmSheet";
 import { Card } from "@/components/Swipe";
@@ -384,16 +385,12 @@ export function QuoteEmail({ size, prefs, setPrefs, onPrint }: { size: MoveSize;
           🖨️ Print quote packet
         </button>
       </div>
-      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl bg-ink/[0.04] px-3 py-1.5 text-[13px]">
-        <span className="font-semibold text-gray-500 max-sm:w-full max-sm:pt-1">In the PDF:</span>
-        <label className="flex min-h-9 items-center gap-2">
-          <input type="checkbox" className="h-4 w-4" style={{ accentColor: "#0d0d0f" }} checked={prefs.pdfPhotos} onChange={() => update({ pdfPhotos: !prefs.pdfPhotos })} />
-          Photos
-        </label>
-        <label className="flex min-h-9 items-center gap-2">
-          <input type="checkbox" className="h-4 w-4" style={{ accentColor: "#0d0d0f" }} checked={prefs.pdfValues} onChange={() => update({ pdfValues: !prefs.pdfValues })} />
-          Values
-        </label>
+      <div className="mt-3 rounded-xl bg-ink/[0.04] px-3 py-1">
+        <div className="pt-1 text-[13px] font-semibold text-gray-500">In the PDF</div>
+        <div className="grid sm:grid-cols-2 sm:gap-x-6">
+          <Toggle label="Photos" checked={prefs.pdfPhotos} onChange={(v) => update({ pdfPhotos: v })} />
+          <Toggle label="Values" checked={prefs.pdfValues} onChange={(v) => update({ pdfValues: v })} />
+        </div>
       </div>
       {pdfError && (
         <p className="mt-2 rounded-lg bg-red-50 p-2 text-sm text-red-700" role="alert">
@@ -436,7 +433,9 @@ export function QuoteEmail({ size, prefs, setPrefs, onPrint }: { size: MoveSize;
           <Group title="Our notes" count={`${prefs.notes.filter((n) => n.on).length}/${prefs.notes.length}`}>
             {prefs.notes.map((n, i) => (
               <div key={i} className="flex items-start gap-2">
-                <input type="checkbox" aria-label="Include this note" className="mt-2.5 h-4 w-4 flex-none" style={{ accentColor: "#0d0d0f" }} checked={n.on} onChange={() => update({ notes: prefs.notes.map((x, j) => (j === i ? { ...x, on: !x.on } : x)) })} />
+                <button type="button" role="switch" aria-checked={n.on} aria-label="Include this note" className="mt-1 flex-none" onClick={() => update({ notes: prefs.notes.map((x, j) => (j === i ? { ...x, on: !x.on } : x)) })}>
+                  <SwitchKnob on={n.on} />
+                </button>
                 <textarea
                   className={`input min-w-0 flex-1 text-sm ${n.on ? "" : "opacity-50"}`}
                   rows={3}
@@ -556,10 +555,10 @@ function Group({ title, count, open, children }: { title: string; count: string;
 
 function Check({ checked, onChange, children }: { checked: boolean; onChange: () => void; children: React.ReactNode }) {
   return (
-    <label className="flex min-w-0 flex-1 cursor-pointer gap-2.5 py-0.5 text-sm">
-      <input type="checkbox" className="mt-0.5 h-4 w-4 flex-none" style={{ accentColor: "#0d0d0f" }} checked={checked} onChange={onChange} />
-      <span className={`min-w-0 break-words ${checked ? "" : "text-gray-400"}`}>{children}</span>
-    </label>
+    <button type="button" role="switch" aria-checked={checked} onClick={onChange} className="flex min-h-11 w-full min-w-0 items-center gap-3 py-0.5 text-left text-sm">
+      <span className={`min-w-0 flex-1 break-words ${checked ? "" : "text-gray-400"}`}>{children}</span>
+      <SwitchKnob on={checked} />
+    </button>
   );
 }
 

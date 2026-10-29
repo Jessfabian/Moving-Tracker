@@ -3,6 +3,7 @@
 import {
   FREQUENCIES,
   SUB_CATEGORIES,
+  SUBSCRIPTION_STATUSES,
   addPeriod,
   cancelHelp,
   daysBetween,
@@ -21,7 +22,8 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { EntityForm } from "@/components/EntityForm";
 import { MoneyImport } from "@/components/MoneyImport";
-import { Card, SwipeRow, showUndo, useDeleteWithUndo, useHiddenRows } from "@/components/Swipe";
+import { BULK_BTN, BULK_DANGER, BULK_PRIMARY, SelectableRow, SelectActions, SelectBar, useBulkDelete, useBulkHide, useBulkUpdate, useSelection, type Selection } from "@/components/Selection";
+import { Card, showUndo, useDeleteWithUndo, useHiddenRows } from "@/components/Swipe";
 import { Drawer, PageHeader, Stat } from "@/components/ui";
 import { useDb, useStore } from "@/lib/store-context";
 
@@ -100,13 +102,24 @@ export default function SubscriptionsPage() {
   const current = viewing ? subs.find((x) => x.id === viewing) : undefined;
   const help = current ? cancelHelp(current) : null;
 
+  const listIds = [...groups.flatMap((g) => g.rows.map((x) => x.id)), ...(showCancelled ? cancelled.map((x) => x.id) : [])];
+  const sel = useSelection(listIds);
+  const nameOf = (id: string) => subs.find((x) => x.id === id)?.name ?? "Subscription";
+  const bulkUpdate = useBulkUpdate<Subscription>("subscriptions", sel, "subscription");
+  const bulkDelete = useBulkDelete("subscriptions", sel, "subscription");
+  const bulkHide = useBulkHide("subscriptions", sel, nameOf, "subscription");
+  const confirmSel = useSelection(confirm.map((x) => x.id));
+  const confirmUpdate = useBulkUpdate<Subscription>("subscriptions", confirmSel, "subscription");
+  const confirmDelete = useBulkDelete("subscriptions", confirmSel, "subscription");
+  const confirmHide = useBulkHide("subscriptions", confirmSel, nameOf, "subscription");
+
   const actions = (x: Subscription) => [
     {
       label: "Hide",
       icon: "🙈",
       onClick: () => {
         hiddenRows.hide({ table: "subscriptions", id: x.id, label: x.name });
-        showUndo(`Hid “${x.name}”`, () => hiddenRows.unhide("subscriptions", x.id));
+        showUndo(`Hid “${x.name}” · find it in Settings`, () => hiddenRows.unhide("subscriptions", x.id));
       },
     },
     { label: "Delete", icon: "🗑", tone: "danger" as const, onClick: () => del("subscriptions", x.id, `“${x.name}”`) },
@@ -124,12 +137,12 @@ export default function SubscriptionsPage() {
     if (Object.keys(patch).length) store.update("subscriptions", r.id, patch, { silent: true });
   };
 
-  const row = (x: Subscription) => {
+  const row = (x: Subscription, s: Selection = sel) => {
     const c = subscriptionCost(x);
     const next = x.status === "cancelled" ? null : rollForward(x.next_due, x.frequency, t);
     return (
       <li key={x.id}>
-        <SwipeRow actions={actions(x)} label={x.name}>
+        <SelectableRow sel={s} id={x.id} actions={actions(x)} label={x.name}>
           <button type="button" onClick={() => setViewing(x.id)} className="flex w-full items-center gap-3 rounded-2xl border border-gray-200/80 bg-white p-3 text-left transition hover:shadow-md">
             <Logo s={x} />
             <span className="min-w-0 flex-1">
@@ -147,7 +160,7 @@ export default function SubscriptionsPage() {
               <span className="text-[11px] whitespace-nowrap text-gray-400">{x.amount != null ? `/mo · ${formatMoney(c.yearly)}/yr` : "add price"}</span>
             </span>
           </button>
-        </SwipeRow>
+        </SelectableRow>
       </li>
     );
   };
@@ -202,11 +215,14 @@ export default function SubscriptionsPage() {
       )}
 
       {confirm.length > 0 && (
-        <Card id="subs.confirm" title={`Is this a subscription? · ${confirm.length}`} icon="🤔">
+        <Card id="subs.confirm" title={`Is this a subscription? · ${confirm.length}`} icon="🤔" right={!confirmSel.active && <SelectBar sel={confirmSel} noun="subscription" />}>
           <p className="-mt-2 mb-3 text-sm text-gray-500">These charge you regularly, but the app isn&apos;t sure they&apos;re subscriptions.</p>
+          {confirmSel.active && <SelectBar sel={confirmSel} noun="subscription" className="mb-3" />}
           <ul className="space-y-2">
             {confirm.map((x) => (
-              <li key={x.id} className="rounded-2xl border border-amber-200 bg-amber-50/60 p-3">
+              <li key={x.id}>
+                <SelectableRow sel={confirmSel} id={x.id} actions={actions(x)} label={x.name}>
+              <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-3">
                 <div className="flex items-center gap-3">
                   <Logo s={x} size="h-10 w-10" />
                   <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setViewing(x.id)}>
@@ -225,16 +241,32 @@ export default function SubscriptionsPage() {
                     Not a subscription
                   </button>
                 </div>
+              </div>
+                </SelectableRow>
               </li>
             ))}
           </ul>
+          <SelectActions sel={confirmSel} noun="subscription">
+            <div className="grid grid-cols-2 gap-2 text-sm lg:grid-cols-4">
+              <button type="button" className={BULK_PRIMARY} onClick={() => confirmUpdate({ status: "active" }, "Confirmed")}>
+                ✓ Yes, they are
+              </button>
+              <button type="button" className={BULK_BTN} onClick={confirmHide}>
+                🙈 Hide
+              </button>
+              <button type="button" className={BULK_DANGER} onClick={confirmDelete}>
+                🗑 Not subscriptions
+              </button>
+            </div>
+          </SelectActions>
         </Card>
       )}
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0 space-y-5">
           {sum.byCategory.length > 0 && (
-            <div className="no-scrollbar -mx-1 flex gap-2 overflow-x-auto px-1">
+            <div className="flex items-center gap-2">
+            <div className="no-scrollbar -mx-1 flex min-w-0 flex-1 gap-2 overflow-x-auto px-1">
               <button type="button" onClick={() => setCat("")} className={`chip min-h-9 shrink-0 px-3 ${!cat ? "bg-ink! text-white!" : ""}`}>
                 All · {formatMoney(sum.monthly)}
               </button>
@@ -245,7 +277,11 @@ export default function SubscriptionsPage() {
                 </button>
               ))}
             </div>
+              {!sel.active && <SelectBar sel={sel} noun="subscription" className="shrink-0" />}
+            </div>
           )}
+          {sum.byCategory.length === 0 && !sel.active && listIds.length > 0 && <SelectBar sel={sel} noun="subscription" />}
+          {sel.active && <SelectBar sel={sel} noun="subscription" />}
 
           {groups.length ? (
             groups.map((g) => (
@@ -255,7 +291,7 @@ export default function SubscriptionsPage() {
                   {g.label}
                   <span className="ml-auto text-sm font-semibold text-gray-500">{formatMoney(g.rows.reduce((a, x) => a + (x.status === "free_trial" ? 0 : subscriptionCost(x).monthly), 0))}/mo</span>
                 </h2>
-                <ul className="space-y-2">{g.rows.map(row)}</ul>
+                <ul className="space-y-2">{g.rows.map((x) => row(x))}</ul>
               </section>
             ))
           ) : (
@@ -280,9 +316,41 @@ export default function SubscriptionsPage() {
                 <span className={`text-xs transition-transform ${showCancelled ? "" : "-rotate-90"}`}>▼</span> Cancelled · {cancelled.length}
                 <span className="ml-auto text-sm font-semibold text-emerald-700">saving {formatMoney(sum.savedYearly)}/yr</span>
               </button>
-              {showCancelled && <ul className="mt-2 space-y-2">{cancelled.map(row)}</ul>}
+              {showCancelled && <ul className="mt-2 space-y-2">{cancelled.map((x) => row(x))}</ul>}
             </section>
           )}
+
+          <SelectActions sel={sel} noun="subscription">
+            <div className="grid grid-cols-2 gap-2 text-sm lg:grid-cols-4">
+              <select className={BULK_BTN} aria-label="Set status" value="" onChange={(e) => e.target.value && bulkUpdate(e.target.value === "cancelled" ? { status: "cancelled", cancelled_on: t, remind: false } : { status: e.target.value as Subscription["status"] }, `Status: ${optionLabel(SUBSCRIPTION_STATUSES, e.target.value)}`)}>
+                <option value="">Status…</option>
+                {SUBSCRIPTION_STATUSES.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+              <select className={BULK_BTN} aria-label="Set category" value="" onChange={(e) => e.target.value && bulkUpdate({ category: e.target.value as Subscription["category"] }, `Category: ${optionLabel(SUB_CATEGORIES, e.target.value)}`)}>
+                <option value="">Category…</option>
+                {SUB_CATEGORIES.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+              <select className={BULK_BTN} aria-label="Set calendar reminders" value="" onChange={(e) => e.target.value && bulkUpdate({ remind: e.target.value === "on" }, e.target.value === "on" ? "Reminders on" : "Reminders off")}>
+                <option value="">Calendar…</option>
+                <option value="on">Show renewals</option>
+                <option value="off">Hide renewals</option>
+              </select>
+              <button type="button" className={BULK_BTN} onClick={bulkHide}>
+                🙈 Hide
+              </button>
+              <button type="button" className={BULK_DANGER} onClick={bulkDelete}>
+                🗑 Delete
+              </button>
+            </div>
+          </SelectActions>
         </div>
 
         <aside className="space-y-4">

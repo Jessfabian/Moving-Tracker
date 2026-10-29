@@ -9,7 +9,7 @@
 import type { TableName } from "@moving/shared";
 import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { useStore } from "@/lib/store-context";
-import { showUndo } from "./Swipe";
+import { showUndo, SwipeRow, useHiddenRows, type SwipeAction } from "./Swipe";
 
 export interface Selection {
   active: boolean;
@@ -262,4 +262,63 @@ export function useBulkDelete(table: TableName, sel: Selection, noun = "item") {
       for (const id of ids) store.restore(table, id);
     });
   }, [store, table, sel, noun]);
+}
+
+/** Hide every selected row on this device (restore from Settings → Hidden), with Undo. */
+export function useBulkHide(table: TableName, sel: Selection, labelOf: (id: string) => string, noun = "item") {
+  const hidden = useHiddenRows();
+  return useCallback(() => {
+    const ids = sel.ids;
+    if (!ids.length) return;
+    const before = hidden.rows;
+    hidden.setAll([...before.filter((h) => !(h.table === table && ids.includes(h.id))), ...ids.map((id) => ({ table, id, label: labelOf(id) }))]);
+    sel.release(ids);
+    showUndo(`Hid ${ids.length} ${noun}${ids.length === 1 ? "" : "s"} · find them in Settings`, () => hidden.setAll(before));
+  }, [hidden, table, sel, labelOf, noun]);
+}
+
+/** Standard look for buttons/pickers inside <SelectActions>. */
+export const BULK_BTN = "min-h-11 min-w-0 truncate rounded-xl bg-white/15 px-3 font-semibold";
+export const BULK_PRIMARY = "min-h-11 min-w-0 truncate rounded-xl bg-white px-3 font-semibold text-ink";
+export const BULK_DANGER = "min-h-11 min-w-0 rounded-xl bg-red-600 px-3 font-semibold";
+
+/**
+ * The one list-row pattern used on every page (HIG Lists and tables, edit mode):
+ *  - normally: tap opens the row; swipe left (or press and hold) for Hide / Delete;
+ *  - while selecting: a check circle appears on the left and tapping anywhere on the row checks it.
+ */
+export function SelectableRow({
+  sel,
+  id,
+  label,
+  actions = [],
+  radius = "rounded-2xl",
+  className = "",
+  children,
+}: {
+  sel?: Selection;
+  id: string;
+  label: string;
+  actions?: SwipeAction[];
+  radius?: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  const selecting = !!sel?.active;
+  const on = selecting && sel!.has(id);
+  return (
+    <SwipeRow actions={selecting ? [] : actions} label={label} radius={radius} className={className}>
+      <div className="relative flex items-center">
+        {selecting && (
+          <span className="flex w-10 shrink-0 justify-center">
+            <SelectCircle on={on} />
+          </span>
+        )}
+        <div className={`min-w-0 flex-1 ${radius} transition-shadow ${on ? "ring-2 ring-accent" : ""}`} inert={selecting || undefined}>
+          {children}
+        </div>
+        {selecting && <button type="button" role="checkbox" aria-checked={on} aria-label={`Select ${label}`} onClick={() => sel!.toggle(id)} className={`absolute inset-0 z-10 ${radius} active:bg-ink/5`} />}
+      </div>
+    </SwipeRow>
+  );
 }

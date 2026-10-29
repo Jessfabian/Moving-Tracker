@@ -1,6 +1,7 @@
 "use client";
 
-import { Card } from "@/components/Swipe";
+import { BULK_BTN, BULK_DANGER, SelectableRow, SelectActions, SelectBar, useBulkDelete, useBulkHide, useBulkUpdate, useSelection } from "@/components/Selection";
+import { Card, showUndo, useDeleteWithUndo, useHiddenRows } from "@/components/Swipe";
 import {
   EXPENSE_CATEGORIES,
   FUND_KINDS,
@@ -126,11 +127,10 @@ function SalesTowardMove() {
     { key: "unlisted", label: "Not listed yet", tone: "bg-ink/5", on: mode === "listed" },
   ];
   return (
-    <div className="card">
+    <Card id="budget-sales" title="Sales toward the move" icon="💰" summary={formatMoney(counted)} bodyClassName="mt-2">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="eyebrow">💰 Sales toward the move</div>
-          <div className="mt-1 font-display text-3xl font-bold tracking-tight">{formatMoney(counted)}</div>
+          <div className="font-display text-3xl font-bold tracking-tight">{formatMoney(counted)}</div>
           <p className="text-xs text-gray-500">{optionLabel(SALES_TO_BUDGET, mode)} — counted in “available to spend” above.</p>
         </div>
         <div className="flex flex-wrap gap-2 text-sm">
@@ -164,14 +164,32 @@ function SalesTowardMove() {
           />
         </div>
       )}
-    </div>
+    </Card>
   );
 }
 
 function Funding() {
   const db = useDb();
   const [editing, setEditing] = useState<Fund | Partial<Fund> | null>(null);
-  const funds = db.funds ?? [];
+  const allFunds = db.funds ?? [];
+  const hiddenRows = useHiddenRows();
+  const del = useDeleteWithUndo();
+  const funds = allFunds.filter((f) => !hiddenRows.isHidden("funds", f.id));
+  const sel = useSelection(funds.map((f) => f.id));
+  const bulkUpdate = useBulkUpdate<Fund>("funds", sel, "funding source");
+  const bulkDelete = useBulkDelete("funds", sel, "funding source");
+  const bulkHide = useBulkHide("funds", sel, (id) => allFunds.find((f) => f.id === id)?.source ?? "Funding source", "funding source");
+  const fundActions = (f: Fund) => [
+    {
+      label: "Hide",
+      icon: "🙈",
+      onClick: () => {
+        hiddenRows.hide({ table: "funds", id: f.id, label: f.source });
+        showUndo(`Hid “${f.source}” · find it in Settings`, () => hiddenRows.unhide("funds", f.id));
+      },
+    },
+    { label: "Delete", icon: "🗑", tone: "danger" as const, onClick: () => del("funds", f.id, `“${f.source}”`) },
+  ];
   const soldValue = salesForBudget(salesProceeds(db), db.moves[0]?.sales_to_budget ?? "sold");
   const taxState = db.moves[0]?.to_state ?? "";
   const s = fundingSummary(funds, db.expenses, db.family_members, undefined, taxState);
@@ -179,14 +197,13 @@ function Funding() {
   const need = sum(db.expenses.map((e) => Math.max(e.estimated ?? 0, e.actual ?? 0)));
   const surplus = available - need;
   const memberOf = (id: string | null) => db.family_members.find((m) => m.id === id) ?? null;
-  const editingRow = editing && "id" in editing && editing.id ? (funds.find((f) => f.id === editing.id) ?? (editing as Fund)) : null;
+  const editingRow = editing && "id" in editing && editing.id ? (allFunds.find((f) => f.id === editing.id) ?? (editing as Fund)) : null;
 
   return (
     <section className="mb-6 space-y-4">
       <div className="grid gap-4 lg:grid-cols-[1.3fr_1fr]">
-        <div className="card-ink relative overflow-hidden p-6">
-          <div className="eyebrow text-white/50">Moving money</div>
-          <div className="mt-3 flex flex-wrap items-end gap-x-6 gap-y-2">
+        <Card id="budget-moving-money" title="Moving money" icon="💵" tone="card-ink" summary={formatMoney(available)} bodyClassName="mt-3">
+          <div className="flex flex-wrap items-end gap-x-6 gap-y-2">
             <div>
               <div className="font-display text-5xl leading-none font-extrabold tracking-[-0.05em] text-lime">{formatMoney(available)}</div>
               <div className="mt-1 text-sm text-white/60">available to spend{soldValue ? ` · incl. ${formatMoney(soldValue)} from sales` : ""}</div>
@@ -219,7 +236,7 @@ function Funding() {
               ))}
             </div>
           )}
-        </div>
+        </Card>
         <Card id="budget.funding" title="Funding sources" right={<button className="btn-primary" onClick={() => setEditing({ kind: "savings" })}>+ Add funds</button>}>
           <p className="mt-1 text-xs text-gray-500">Where the moving money comes from. Tap a quick-add, then attach the PDF paperwork.</p>
           <div className="mt-3 flex flex-wrap gap-1.5">
@@ -229,14 +246,21 @@ function Funding() {
               </button>
             ))}
           </div>
-          <ul className="mt-4 divide-y divide-ink/5">
+          {funds.length > 0 && !sel.active && (
+            <div className="mt-4 flex justify-end">
+              <SelectBar sel={sel} noun="funding source" />
+            </div>
+          )}
+          {sel.active && <SelectBar sel={sel} noun="funding source" className="mt-4" />}
+          <ul className="mt-2 space-y-1">
             {funds.length === 0 && <li className="py-6 text-center text-sm text-gray-400">No funding sources yet.</li>}
             {funds.map((f) => {
               const tax = fundTax(f, { member: memberOf(f.member_id), state: taxState });
               const net = tax.net;
               return (
                 <li key={f.id}>
-                  <button className="flex w-full items-center gap-3 py-2.5 text-left" onClick={() => setEditing(f)}>
+                  <SelectableRow sel={sel} id={f.id} label={f.source} actions={fundActions(f)}>
+                  <button className="flex w-full items-center gap-3 rounded-2xl bg-white px-1 py-2.5 text-left" onClick={() => setEditing(f)}>
                     <span className="grid h-9 w-9 flex-none place-items-center rounded-xl bg-sand text-lg">{fundRule(f.kind).icon}</span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate font-semibold">{f.source}</span>
@@ -257,10 +281,27 @@ function Funding() {
                     </span>
                     <span className={`chip ${f.received ? "bg-sage text-ink" : "bg-ink/5 text-gray-600"}`}>{f.received ? "In hand" : "Pending"}</span>
                   </button>
+                  </SelectableRow>
                 </li>
               );
             })}
           </ul>
+          <SelectActions sel={sel} noun="funding source">
+            <div className="grid grid-cols-2 gap-2 text-sm lg:grid-cols-4">
+              <button type="button" className={BULK_BTN} onClick={() => bulkUpdate({ received: true }, "In hand")}>
+                ✓ In hand
+              </button>
+              <button type="button" className={BULK_BTN} onClick={() => bulkUpdate({ received: false }, "Pending")}>
+                ⏳ Pending
+              </button>
+              <button type="button" className={BULK_BTN} onClick={bulkHide}>
+                🙈 Hide
+              </button>
+              <button type="button" className={BULK_DANGER} onClick={bulkDelete}>
+                🗑 Delete
+              </button>
+            </div>
+          </SelectActions>
         </Card>
       </div>
       <SalesTowardMove />
@@ -385,6 +426,16 @@ export default function BudgetPage() {
       columns={["estimated", "actual", "date", "paid_by"]}
       filters={["category"]}
       groupBy="category"
+      bulkActions={({ update }) => (
+        <>
+          <button type="button" className={BULK_BTN} onClick={() => update({ paid: true }, "Marked paid")}>
+            ✓ Paid
+          </button>
+          <button type="button" className={BULK_BTN} onClick={() => update({ paid: false }, "Marked unpaid")}>
+            Unpaid
+          </button>
+        </>
+      )}
       renderBadge={(e) => (
         <span className="flex flex-none items-center gap-2 text-sm">
           {e.receipts.length > 0 && <span className="text-xs text-gray-400">🧾{e.receipts.length}</span>}
